@@ -1,0 +1,15 @@
+{
+  "name": "opencode-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local request-inspection proxy for debugging OpenCode traffic",
+  "main": "proxy.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node proxy.js",
+    "cert": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/generate-cert.ps1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

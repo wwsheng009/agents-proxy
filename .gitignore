@@ -1,0 +1,32 @@
+# --- dependencies ---
+node_modules/
+
+# --- logs（代理抓包日志可能含敏感 header/body） ---
+*.log
+
+# --- env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- generated TLS material（含私钥，绝不入库） ---
+certs/
+.ca/
+
+# --- runtime data（SQLite 及其临时文件；data/replay 证据产物保留跟踪） ---
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
+
+# --- local backups ---
+.backups/
+**/.backups/
+*.bak
+*.bak-*
+
+# --- editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
