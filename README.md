@@ -73,6 +73,40 @@ node proxy.js
 http://127.0.0.1:8787
 ```
 
+### OpenCode Zen 免费道兼容（v2，已打通）
+
+当目标是 `opencode.ai` 时，`proxy.js` 会自动把 OpenAI 风格请求改写到 v2 推理端点
+（`/inference/v1`），并补齐免费道准入所需的全部要素（2026-10 实验测定，证据见
+[分析-opencode-v2指纹与准入.md](./docs/分析-opencode-v2指纹与准入.md) §三）：
+
+- `Bearer public` 鉴权、`opencode/latest/<ver>/cli` 四段 UA；
+- v2 算法本地铸造 `ses_` 会话（同调用方 key 稳定映射）+ v2 新头组（`x-opencode-session-id`、
+  `x-session-affinity`、`x-session-id`、`traceparent`/`b3`）；**剔除 msg_ 毒头** `x-opencode-request`；
+- 强制 `stream:true`（非流式调用方 SSE→JSON 回组）；tools 自动补 opencode `read` 工具（自有工具保留）；
+- `reasoning_effort` 值域降级映射；模型列表 `/v1/models`、`/v1beta/models` 均可探测（auto 协议可用）。
+
+设置 `ZEN_COMPAT=false` 恢复纯透传（观测模式，记录真实 v2 客户端流量）。
+
+**使用**：任意 OpenAI 兼容客户端指向 `http://127.0.0.1:8787/v1`，api_key 任意，model 用
+`-free` 结尾模型（如 `deepseek-v4.1-flash-free`）。免费额度按 IP 限流（约 200 请求/天），
+429 = 配额耗尽，等窗口重置。付费模型需真实 Zen key（纯透传）。
+
+> **2026-10 准入变更记录**：上游已从 `/zen/v1` 迁移到 `/inference/v1`，1.x 三扇门
+> （模板+stream+旧 session 算法）全部失效；v2 新规则（read 工具 + stream + v2 session 算法 +
+> 禁 msg_ 头）已由本代理完整适配。历史分析与新旧对照见
+> [分析-opencode-v2指纹与准入.md](./docs/分析-opencode-v2指纹与准入.md)。
+
+兼容层当前只消费 `opencode_tools.json`（**随仓库自带一份满足准入的最小文件**；路径可用 `ZEN_TOOLS_FILE` 覆盖）：调用方 `tools` 缺 `read` 时，
+把其中的 canonical `read` 工具前插；该文件按需读取（首次用到时读一次并缓存），取不到 `read` 时跳过注入
+并输出一条 `event=zen_tools_missing` 的 warn（每进程至多一次，与 `proxy-go` 的启动期告警对称；
+`start-proxy.ps1` 另会在启动时警示未定位到）。1.x 的 `opencode_system_prompt.txt` 与
+`opencode_agent_system_prompt.txt` 已不再注入（v2 无需模板），对应加载函数无调用点，仅为兼容旧配置保留。
+这些文件只在命中 `opencode.ai` 的 `/zen/v1/*` 或 `/inference/v1/*`
+（`chat/completions`、`responses`、`messages`、`models`）时才会被读取。
+注意：该兼容层作用于 HTTP 反向代理请求；标准 `HTTPS_PROXY` 的 `CONNECT`
+是盲隧道，无法改写其中的 TLS 请求。其它工具请把 OpenAI base URL 指向本机
+HTTP 代理（如 `http://127.0.0.1:8787`）。
+
 ## 标准代理示例
 
 ```powershell
@@ -181,6 +215,13 @@ OpenCode 不保存最终发出的原始请求 header/body；要看这部分必�
 
 ## 文档
 
-- 完整设计、限制和合规说明见 [方案.md](./方案.md)。
-- `x-opencode-session` 生成算法与免费额度准入校验的逆向分析（24 针判别实验）见 [分析-会话标识与免费额度校验.md](./分析-会话标识与免费额度校验.md)。
-- 请求全量参数/header、ID 唯一性机制与脚本映射见 [请求参数与Header说明.md](./请求参数与Header说明.md)。
+> 全部设计与逆向分析文档收录在 [`docs/`](./docs/README.md) 目录，附总索引与阅读顺序。
+
+- 完整设计、限制和合规说明见 [方案.md](./docs/方案.md)。
+- `x-opencode-session` 生成算法与免费额度准入校验的逆向分析（24 针判别实验）见 [分析-会话标识与免费额度校验.md](./docs/分析-会话标识与免费额度校验.md)。
+- **opencode v2（v2.0.29）请求指纹、/inference/v1 端点迁移、v2 准入规则全解（read 工具门 + session 算法 + msg_ 毒头）与代理适配记录**见 [分析-opencode-v2指纹与准入.md](./docs/分析-opencode-v2指纹与准入.md)。
+- 请求全量参数/header、ID 唯一性机制与脚本映射见 [请求参数与Header说明.md](./docs/请求参数与Header说明.md)。
+- Go 版准入规则验证程序（离线 24 针证据表比对 + 可选在线重放）见 [verify-go/](./verify-go/README.md)。
+- 独立 Go 代理服务（v2 兼容层：`/inference/v1` 端点改写、v2 身份头组 + msg_ 毒头剥离、入口 header 可配置、原生 ID 透传、会话稳定映射 + SQLite、v2 body 自动修正）见 [proxy-go/](./proxy-go/README.md)。
+- 逆向全过程总账：时间线（P1~P24 / T1~T11 证据编号）、踩坑清单、成功请求三扇门完整要求见 [过程与坑.md](./docs/过程与坑.md)。
+- 一次性实验脚本（判别 / 差分 / 重放，按用途归类）索引见 [scripts/experiments/](./scripts/experiments/README.md)。

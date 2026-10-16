@@ -1,0 +1,71 @@
+# proxy-go —— opencode 免费道独立代理配置（v2）
+#
+# 客户端请求 {listen}{path} → 转发到 {upstream}{path}（可先 strip_prefix）。
+# v2 拓扑：其它程序 POST http://127.0.0.1:8788/v1/chat/completions
+#           → https://opencode.ai/inference/v1/chat/completions
+# 端点迁移（1.x /zen/v1 → v2 /inference/v1）见 ../docs/分析-opencode-v2指纹与准入.md §三。
+# upstream 必须是站点根 https://opencode.ai（不要再带 /zen）：带 /zen 会把路径钉死在
+# 已锁死的旧端点上，任何改写都 403/410。
+
+listen: "127.0.0.1:8788"
+upstream: "https://opencode.ai"
+
+# 会话/消息映射持久化（相对路径基于启动时工作目录）
+db_path: "proxy-go.db"
+
+# 可选：转发前从入站路径去掉的前缀（如客户端固定打 /proxy）
+strip_prefix: ""
+
+# 入站 session key 识别：按 headers 顺序取第一个非空（名称大小写不敏感）。
+# 入口可任意增删：原生 x-opencode-session 已列为入口，多个入口按此顺序判优先；
+# 都没有则使用 fallback_key（所有未带会话的客户端共享同一条映射）
+session:
+  headers:
+    - x-session-id
+    - x-opencode-session
+    - x-session
+  fallback_key: "default"
+  # 值已符合上游结构 ^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$ → 原样透传（不重映射），
+  # 传原生 x-opencode-session 的调用方按原值继续；false = 一律重映射
+  passthrough_native: true
+
+# 入站 message key 识别（可选，同样按 headers 顺序取第一个非空）：
+#   带 key → 稳定映射（同一 key 永远对应同一条上游 msg_，写入 sqlite）
+#   不带   → 每请求按 opencode 算法新生成一条 msg_
+# 注意：v2 上游**禁止** x-opencode-request（msg_ 毒头，带上即 403），因此该头
+# 已列入毒头在转发前剥离（headers.go），默认也不再把 msg_ 注入上游；
+# 映射结果仅用于本地审计与响应观测头 X-Proxy-Request。
+message:
+  headers:
+    - x-message-id
+  # 值已符合 ^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$ 结构 → 原样透传；false = 一律重映射
+  passthrough_native: true
+
+# 注入上游的 opencode v2 身份 header（客户端自带的一切 x-opencode-* / 会话头先丢弃，
+# 再按上文入口解析结果统一注入——原生值透传时注入的就是调用方原值）：
+#   authorization: Bearer public（匿名 key，v2 沿用）
+#   user_agent   : v2 四段格式 opencode/<channel>/<version>/<artifact>
+upstream_headers:
+  user_agent: "opencode/latest/2.0.29/cli"
+  authorization: "Bearer public" # 置空字符串则透传客户端原值
+  client: "cli"
+  project: "global"
+
+# body 形态修正（v2 准入，见 fixup.go 头注释 / ../docs/分析-opencode-v2指纹与准入.md §三）：
+# v2 只要求 body 满足 ① stream:true ② tools 含 name="read" 的 opencode 工具；
+# system 内容完全不校验，1.x 的“门③模板注入 + 12 工具白名单”已作废。
+#   off             —— 不改 body（调用方自带合规 body）
+#   v2              —— 强制 stream:true；tools 缺 read 时前插 canonical read 工具
+#                      （调用方自有工具全部保留）；reasoning_effort 归一化
+#   inject_template —— 遗留 1.x 规则（已失效，仅存档；对现行上游一律 403）
+body_fixup:
+  mode: "v2"
+  # 下面三项仅 inject_template 模式使用；v2 模式只读 tools_file 里的 read 那一条。
+  template_file: "opencode_system_prompt.txt"
+  agent_template_file: "../opencode_agent_system_prompt.txt"
+  tools_file: "../opencode_tools.json"
+
+# 请求审计（request_log 表）
+log:
+  requests: true
+  keep_days: 7

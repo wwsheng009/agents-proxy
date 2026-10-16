@@ -1,6 +1,11 @@
 # --- dependencies ---
 node_modules/
 
+# --- build output ---
+*.exe
+*.exe~
+proxy-go/proxy-go
+
 # --- logs（代理抓包日志可能含敏感 header/body） ---
 *.log
 
@@ -9,21 +14,30 @@ node_modules/
 .env.*
 !.env.example
 
+# --- proprietary prompt dumps（第三方转储，不入库） ---
+opencode_*system_prompt*.txt
+
+# --- local tool-face override（proxy-go 侧本地覆盖，不入库；仓库根那份 opencode_tools.json 是自带基线，跟踪） ---
+/proxy-go/opencode_tools.json
+
 # --- generated TLS material（含私钥，绝不入库） ---
 certs/
 .ca/
 
-# --- runtime data（SQLite 及其临时文件；data/replay 证据产物保留跟踪） ---
-data/*.db
-data/*.db-*
-data/*.sqlite
-data/*.sqlite-*
+# --- runtime data（SQLite 及其临时文件，任意层级；data/replay 证据产物保留跟踪） ---
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
 
 # --- local backups ---
 .backups/
 **/.backups/
 *.bak
 *.bak-*
+
+# --- local agent / tooling（个人环境配置，不入库） ---
+.aicli/
 
 # --- editor / OS ---
 .vscode/

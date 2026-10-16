@@ -88,6 +88,27 @@ installation/index.ts:41-45  userAgent(): opencode/<channel>/<version>/<client> 
 
 **复现完整 payload 的做法**：`LOG_BODY=true` + `MAX_PREVIEW_CHARS`/`MAX_BODY_LOG_BYTES` 调到大于目标请求体积，再跑一次会话。
 
+### 3.3 `reasoning_effort`（2026-09-22 补测：协议定位 + 上游值域）
+
+**字段定位（OpenAI 官方协议）**：`reasoning_effort` 是 OpenAI **标准参数**，同时存在于 Chat Completions 与 Responses API。协议依据采用官方 SDK 类型定义（由 OpenAI OpenAPI spec 直接生成，2026-09 现状）：
+
+- `openai-node` `src/resources/shared.ts:364`：`type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null`；
+- `openai-python` `src/openai/types/shared/reasoning_effort.py`：`Optional[Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]]`；
+- 官方注明："Not all reasoning models support every value"（并非所有推理模型都支持每个取值，见 reasoning guide 模型支持矩阵）。
+
+即：**官方法定取值 7 个**（`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`），`max` 是合法值（早前"max 非官方值"的预判作废）。
+
+**上游实测值域**（单变量：H13 基准 body = G1 真实形态减 effort，模型 `mimo-v2.6-flash-free`，完整身份头；仅改 `reasoning_effort` 值，见 `scripts/experiments/replay/run-effort-values*.py`）：
+
+| `reasoning_effort` | 上游结果 | 说明 |
+|---|---|---|
+| 缺省 / `none` / `low` / `medium` / `high` | **200** | medium 两次复核均 200 |
+| `max` / `minimal` / `xhigh` / 任意非法值 | **500** `Internal server error` | max 与 H 系列历史复现一致 |
+
+→ 上游（`mimo-v2.6-flash-free` 后端）**只认 `{none, low, medium, high}` 四值**，恰好是官方新增 `minimal/xhigh/max` 之前的旧枚举；新档位与非法值一律 500。行为与官方"not all models support every value"逐字对应。
+
+**结论（aicli 侧修复依据）**：`reasoning_effort:"max"` → 500 的根因是**取值超出该模型后端的支持面**，不是字段非法、也不是协议非标准。修复应**改值而非删字段**：`max → "high"`（保最高档语义，实测 200）或 `"medium"`。若由代理层转换，做**值降级映射**（`max/xhigh → high`、`minimal → low`）即可，无需剥离字段。
+
 ## 4. ID 与唯一性：每一条用户消息如何区分
 
 ### 4.1 生成器（`packages/schema/src/identifier.ts`，全文 30 行）
@@ -171,7 +192,9 @@ msg_0c786447b001… 时间段解码 → 2026-09-22T05:11:00.475Z（首条用户�
 | `scripts/replay-payloads.js` | `manifest.json` + 本地 payload | 经本地代理重放到上游的 HTTP 状态 | 重放时跳过 `host/content-length/connection/transfer-encoding`，其余 header 原样 |
 | `scripts/probe-session.js` | 基座 `muc7umlx-1qdmbboy.json` + `extra`~`extra6` 参数 | `data/replay/probe-matrix*.json`（24 针结果） | **单变量改 header**：session/UA/client/project/msg；内置 `makeId()` 复刻生成器 |
 | `scripts/bin-ctx.js` | opencode.exe 二进制 + 搜索串（默认 `"ses_"`） | 命中点前后上下文 | 在**本地二进制**中验证 `"ses_"` 等字符串常量（源码与产物一致性抽查） |
+| `proxy-go/`（Go 子模块） | config.yaml + 抓包 system 模板 | 本地监听 + `data/replay/proxy-go.db` | **独立代理服务**：header 重写/会话稳定映射/SQLite；门③自动修正（注入模板+强制流式+SSE→JSON） |
 | `scripts/probe-response.js` | manifest 首条完整 payload（仅压小 `max_tokens` 强制快收流） | `data/replay/resp-headers.txt` + `resp-body.sse` | 抓**响应**头与完整 SSE，检查 usage/cost/限流字段（§8） |
+| `verify-go/`（Go 子模块） | 24 针证据表 + 复刻双门规则 | 终端报告 / `data/replay/probe-matrix-go.json` | **验证程序**：离线 `go run .` 零耗额度；`-live` 在线重放比对；`go test` 含 ID 生成黄金向量；2026-09-22 在线复验 **24/24 匹配** |
 | `scripts/generate-cert.ps1` | — | `certs/ca.pem`、`server.crt`、`server.key` | HTTPS 反代用，与上游 header 无关 |
 
 常用命令：
@@ -182,6 +205,7 @@ node scripts/replay-payloads.js                       # 原样重放（对照 20
 node scripts/probe-session.js                         # P0~P3 主矩阵
 node scripts/probe-session.js extra                   # 其余各组: extra/extra2…extra6
 node scripts/probe-response.js                        # 抓完整响应头+SSE（费用/用量/限流字段）
+go run -C verify-go .                                 # Go 版离线验证（24 针证据表×双门规则，零耗额度）
 node scripts/bin-ctx.js <exe路径> '"ses_"'            # 二进制串上下文
 ```
 
@@ -200,7 +224,7 @@ node scripts/bin-ctx.js <exe路径> '"ses_"'            # 二进制串上下文
 - 随机段字符集逐枚举（`_`/`!`/空格/Unicode）；
 - 版本解析边界：`opencode/1`、`opencode/1.18.0.1`、`opencode/01.18.0`；
 - 小写时间 hex + 大写随机段混合已通过（生成器输出），单字符大小写敏感性矩阵；
-- body/URL/model 维度：目前全部是常量，若要证明"仅 header 决定准入"需补 body 变量实验；
+- `body/URL/model` 维度：**2026-09-22 已补单变量实验（T1~T11）**——`body` **参与准入**（此前“仅 header”结论过窄）：门③ = `messages` 首条 system 含真实 opencode 模板内容 **且** `stream:true`（缺一 403，大小/user 内容无关；`proxy-go/fixup.go` 已按此自动修正）。`URL`/`model` 值仍为常量未单列。
 - `x-parent-session-id`（子任务流量）出现时的服务端行为。
 
 **代理改进想法：**
