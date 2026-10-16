@@ -16,6 +16,20 @@ db_path: "proxy-go.db"
 # 可选：转发前从入站路径去掉的前缀（如客户端固定打 /proxy）
 strip_prefix: ""
 
+# 出站代理（可选）：只影响「本代理 → 上游 opencode.ai」这一段，
+# 入站客户端连本代理不受影响。支持 http / https / socks5 / socks5h，
+# 认证可内嵌在 URL（如 http://user:pass@127.0.0.1:10810）。
+# 留空 url 即关闭（回到直连 / 环境变量）。
+# 是否生效看响应头 X-Proxy-Via 或请求日志的 upstream_proxy 字段。
+proxy:
+  url: "http://127.0.0.1:10810"
+  # 也可换成 socks5：socks5://127.0.0.1:1080
+  # 直连名单（命中即绕过代理，仅 url 非空时生效）：
+  #   *  全部直连 / example.com（含子域）/ .internal / host:1080 / 10.0.0.0/8
+  no_proxy: []
+  # url 为空时是否回退 HTTP_PROXY/HTTPS_PROXY/NO_PROXY 环境变量（历史默认行为）
+  from_env: true
+
 # 入站 session key 识别：按 headers 顺序取第一个非空（名称大小写不敏感）。
 # 入口可任意增删：原生 x-opencode-session 已列为入口，多个入口按此顺序判优先；
 # 都没有则使用 fallback_key（所有未带会话的客户端共享同一条映射）

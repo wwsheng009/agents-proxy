@@ -19,10 +19,11 @@ func main() {
 		listen     = flag.String("listen", "", "监听地址（覆盖配置，如 0.0.0.0:8788）")
 		upstream   = flag.String("upstream", "", "上游 base URL（覆盖配置）")
 		dbPath     = flag.String("db", "", "SQLite 路径（覆盖配置）")
+		proxyURL   = flag.String("proxy", "", "出站代理（覆盖配置，如 http://127.0.0.1:10810、socks5://host:1080）")
 	)
 	flag.Parse()
 
-	cfg, err := loadWithOverrides(*configPath, *listen, *upstream, *dbPath)
+	cfg, err := loadWithOverrides(*configPath, *listen, *upstream, *dbPath, *proxyURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config:", err)
 		os.Exit(2)
@@ -81,7 +82,7 @@ func main() {
 }
 
 // loadWithOverrides 加载配置并应用 CLI 覆盖项。
-func loadWithOverrides(path, listen, upstream, db string) (Config, error) {
+func loadWithOverrides(path, listen, upstream, db, proxyURL string) (Config, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			// 显式指定的 -config 缺失视为错误；默认路径缺失回退内置默认
@@ -110,6 +111,9 @@ func loadWithOverrides(path, listen, upstream, db string) (Config, error) {
 	}
 	if db != "" {
 		cfg.DBPath = db
+	}
+	if proxyURL != "" {
+		cfg.Proxy.URL = proxyURL
 	}
 	return cfg, nil
 }

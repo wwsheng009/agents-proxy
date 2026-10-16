@@ -38,6 +38,9 @@ type Proxy struct {
 	bodyAgentTemplate string
 	bodyTools         json.RawMessage
 	bodyReadTool      json.RawMessage
+	// proxyFunc 与 transport 生效的代理判定一致（nil = 直连），
+	// 用于对外暴露「本次请求实际是否走了代理」。
+	proxyFunc func(*http.Request) (*url.URL, error)
 }
 
 func NewProxy(cfg *Config, store *Store) (*Proxy, error) {
@@ -45,13 +48,19 @@ func NewProxy(cfg *Config, store *Store) (*Proxy, error) {
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("解析 upstream 失败: %q", cfg.Upstream)
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.ResponseHeaderTimeout = 60 * time.Second // 只等响应头，不限制流式总时长
+	// 出站 transport：连接池沿用默认值，代理（http/https/socks5）由配置决定。
+	tr, pf, err := buildTransport(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("构造出站 transport: %w", err)
+	}
+	slog.Info("upstream proxy resolved",
+		"configured", cfg.Proxy.URL, "no_proxy", cfg.Proxy.NoProxy, "from_env", cfg.Proxy.FromEnv)
 	p := &Proxy{
-		cfg:      cfg,
-		store:    store,
-		client:   &http.Client{Transport: tr},
-		upstream: u,
+		cfg:       cfg,
+		store:     store,
+		client:    &http.Client{Transport: tr},
+		upstream:  u,
+		proxyFunc: pf,
 	}
 	if cfg.BodyFixup.Mode == FixupModeInjectTemplate {
 		tpl, err := LoadTemplate(cfg.BodyFixup.TemplateFile)
@@ -88,7 +97,17 @@ func (p *Proxy) healthz(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "upstream": p.cfg.Upstream})
+	// proxy_effective 用一次真实目标的判定结果展示当前生效的出站代理，
+	// 便于区分「配置了」与「真的会走」。
+	probe, _ := http.NewRequest(http.MethodGet, p.cfg.Upstream, nil)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               true,
+		"upstream":         p.cfg.Upstream,
+		"proxy_configured": p.cfg.Proxy.URL,
+		"proxy_no_proxy":   p.cfg.Proxy.NoProxy,
+		"proxy_from_env":   p.cfg.Proxy.FromEnv,
+		"proxy_effective":  p.effectiveProxy(probe),
+	})
 }
 
 // sessions 查看映射（本地调试用；默认只监听 127.0.0.1）。
@@ -155,6 +174,8 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	target := p.resolveTarget(r)
 	zen := p.isZenTarget(target)
 	zenChat := zen && zenChatRe.MatchString(target.Path)
+	// 本次请求实际使用的出站代理（与 transport 同一判定），用于日志与响应头。
+	via := p.effectiveProxy(&http.Request{URL: target})
 
 	// body 处理（mode=off 流式字节不动；v2 只对道内 chat 端点生效；
 	// 遗留 inject_template 保持历史全局行为）+ 构造上游请求
@@ -167,7 +188,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-		p.logRequest(r, sessionKey, upSession, messageKey, upMessage, http.StatusBadRequest, start)
+		p.logRequest(r, sessionKey, upSession, messageKey, upMessage, http.StatusBadRequest, start, via)
 		return
 	}
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bodyReader)
@@ -192,7 +213,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": "upstream request failed: " + err.Error(), "type": "proxy_error"},
 		})
-		p.logRequest(r, sessionKey, upSession, messageKey, upMessage, http.StatusBadGateway, start)
+		p.logRequest(r, sessionKey, upSession, messageKey, upMessage, http.StatusBadGateway, start, via)
 		return
 	}
 	defer resp.Body.Close()
@@ -201,6 +222,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	copyResponseHeaders(w.Header(), resp.Header)
 	w.Header().Set("X-Proxy-Session", upSession)
 	w.Header().Set("X-Proxy-Request", upMessage)
+	w.Header().Set("X-Proxy-Via", via)
 
 	// 5.5) 非流式调用方 + 代理强制了上游流式 → SSE 组装回 JSON（对外契约不变）
 	if translateResp && resp.StatusCode == http.StatusOK &&
@@ -211,7 +233,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(assembleCompletion(all))
-			p.logRequest(r, sessionKey, upSession, messageKey, upMessage, resp.StatusCode, start)
+			p.logRequest(r, sessionKey, upSession, messageKey, upMessage, resp.StatusCode, start, via)
 			return
 		}
 		// 读失败 → 降级走下方原流式回放
@@ -236,7 +258,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	p.logRequest(r, sessionKey, upSession, messageKey, upMessage, resp.StatusCode, start)
+	p.logRequest(r, sessionKey, upSession, messageKey, upMessage, resp.StatusCode, start, via)
 }
 
 // resolveTarget = upstream base.Path +（去前缀后的）入站 path + 原样 query，
@@ -281,12 +303,26 @@ func (p *Proxy) isZenTarget(u *url.URL) bool {
 	return p.cfg.ZenCompat && zenLaneRe.MatchString(u.Path)
 }
 
-func (p *Proxy) logRequest(r *http.Request, sessKey, upSess, msgKey, upMsg string, status int, start time.Time) {
+// effectiveProxy 返回对给定请求实际生效的出站代理地址；直连返回 "direct"。
+// 与 transport 用的是同一个判定函数，因此结论与真实转发一致。
+func (p *Proxy) effectiveProxy(req *http.Request) string {
+	if p.proxyFunc == nil || req == nil || req.URL == nil {
+		return "direct"
+	}
+	u, err := p.proxyFunc(req)
+	if err != nil || u == nil {
+		return "direct"
+	}
+	return u.String()
+}
+
+func (p *Proxy) logRequest(r *http.Request, sessKey, upSess, msgKey, upMsg string, status int, start time.Time, via string) {
 	dur := time.Since(start)
 	sessionVia, _ := findKeySrc(r.Header, p.cfg.Session.Headers)
 	messageVia, _ := findKeySrc(r.Header, p.cfg.Message.Headers)
 	slog.Info("proxy",
 		"method", r.Method, "path", r.URL.Path, "status", status,
+		"upstream_proxy", via,
 		"session", sessKey, "session_via", sessionVia, "upstream_session", upSess,
 		"message", msgKey, "message_via", messageVia, "upstream_message", upMsg,
 		"duration_ms", dur.Milliseconds())
@@ -313,7 +349,7 @@ func setCORS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "X-Proxy-Session, X-Proxy-Request")
+	w.Header().Set("Access-Control-Expose-Headers", "X-Proxy-Session, X-Proxy-Request, X-Proxy-Via")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

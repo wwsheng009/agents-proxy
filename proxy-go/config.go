@@ -20,8 +20,27 @@ type Config struct {
 	Session         SessionConfig   `yaml:"session"`
 	Message         MessageConfig   `yaml:"message"`
 	UpstreamHeaders HeaderConfig    `yaml:"upstream_headers"`
+	Proxy           ProxyConfig     `yaml:"proxy"`
 	Log             LogConfig       `yaml:"log"`
 	BodyFixup       BodyFixupConfig `yaml:"body_fixup"`
+}
+
+// ProxyConfig 上游出站代理（可选）。
+//
+// 作用对象是代理进程 → 上游（opencode.ai）这一段；入站客户端到本代理的
+// 连接不受影响。支持 http / https / socks5 / socks5h（net/http 原生支持，
+// 无额外依赖），认证可内嵌在 URL 里。
+type ProxyConfig struct {
+	// URL 代理地址，如 http://127.0.0.1:10810、socks5://user:pass@host:1080。
+	// 留空 = 不使用显式代理（是否读环境变量见 from_env）。
+	URL string `yaml:"url"`
+	// NoProxy 直连名单，命中则绕过代理（仅 URL 非空时生效）。
+	// 支持：*、域名（含子域，如 example.com / .internal）、host:port、
+	// IP、CIDR（如 10.0.0.0/8）。
+	NoProxy []string `yaml:"no_proxy"`
+	// FromEnv 未配置 URL 时，是否回退读取 HTTP_PROXY/HTTPS_PROXY/NO_PROXY
+	// 环境变量（历史默认行为）。URL 非空时忽略本项。
+	FromEnv bool `yaml:"from_env"`
 }
 
 type SessionConfig struct {
@@ -85,6 +104,11 @@ func DefaultConfig() Config {
 			Client:        "cli",
 			Project:       "global",
 		},
+		Proxy: ProxyConfig{
+			// 默认不配置显式代理，但保留历史行为：跟随 HTTP_PROXY/HTTPS_PROXY 环境变量。
+			URL:     "",
+			FromEnv: true,
+		},
 		Log: LogConfig{Requests: true, KeepDays: 7},
 		BodyFixup: BodyFixupConfig{
 			Mode:              FixupModeV2,
@@ -134,6 +158,14 @@ func (c *Config) Validate() error {
 	}
 	if c.DBPath == "" {
 		return fmt.Errorf("db_path 不能为空")
+	}
+	if strings.TrimSpace(c.Proxy.URL) != "" {
+		if _, err := parseProxyURL(c.Proxy.URL); err != nil {
+			return fmt.Errorf("proxy.url 非法: %w", err)
+		}
+	}
+	if _, err := newNoProxyMatcher(c.Proxy.NoProxy); err != nil {
+		return fmt.Errorf("proxy.no_proxy 非法: %w", err)
 	}
 	if c.Session.FallbackKey == "" {
 		return fmt.Errorf("session.fallback_key 不能为空")

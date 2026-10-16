@@ -72,6 +72,48 @@ curl http://127.0.0.1:8788/v1/chat/completions \
   直接传原生 `x-opencode-session` 也可以——值已符合上游结构时**原样透传**
   （见 `passthrough_native`），否则照常稳定重映射。
 
+## 出站代理（`proxy`，支持 http/https/socks5）
+
+只作用于「本代理 → 上游 opencode.ai」这一段；客户端连本代理的入站链路不变。
+http / https / socks5 / socks5h 四种 scheme 由 Go `net/http` 原生实现，无需额外依赖
+（`socks5` 与 `socks5h` 等价，均在代理端解析域名）。认证可内嵌在 URL。
+
+```yaml
+proxy:
+  url: "http://127.0.0.1:10810"   # 也可 socks5://user:pass@127.0.0.1:1080
+  no_proxy: ["localhost", "127.0.0.1", ".internal", "10.0.0.0/8"]
+  from_env: true                  # url 为空时回退 HTTP_PROXY/HTTPS_PROXY/NO_PROXY
+```
+
+```powershell
+go run . -proxy http://127.0.0.1:10810        # CLI 覆盖配置
+go run . -proxy socks5://127.0.0.1:1080
+```
+
+- `url` 留空 = 不使用显式代理；此时 `from_env: true`（默认）仍会读取
+  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`（与改造前行为一致）；`from_env: false`
+  则强制直连。
+- `no_proxy` 命中即绕过代理，支持 `*`、域名（含子域）、`host:port`、IP、CIDR。
+- 非法 scheme / 地址会在启动自检（`Config.Validate`）阶段直接报错退出。
+
+### 怎么确认代理真的生效
+
+「配置了」不等于「真的走了」。按证据强度从弱到强：
+
+1. **启动日志**：`INFO upstream proxy resolved configured=… no_proxy=[] from_env=true`
+   —— 只证明配置被解析、判定函数已挂到 transport 上。
+2. **每条请求日志**：`INFO proxy … status=200 upstream_proxy=http://127.0.0.1:10810 …`
+   —— `upstream_proxy=direct` 表示这次直连（含 `no_proxy` 命中）。
+3. **响应头 `X-Proxy-Via`**：与上一条同源，直接回显本次转发使用的代理地址（`direct` = 未走代理）。
+   已加入 CORS `Access-Control-Expose-Headers`，浏览器调用方也能读到。
+4. **`GET /healthz`**：返回 `proxy_configured` / `proxy_no_proxy` / `proxy_from_env` /
+   `proxy_effective`，其中 `proxy_effective` 是对真实 upstream 做一次判定后的结果。
+5. **外部实证（最强）**：在代理端看连接日志；或把 `proxy.url` 指向一个不可达地址
+   —— 若请求立即以 `502 upstream request failed` 失败，说明确实经过代理；若仍 200，说明没走。
+
+注意：`proxy.url` 留空且 `from_env: true` 时，生效代理来自 `HTTP_PROXY`/`HTTPS_PROXY`
+环境变量，`proxy_effective` 会显示该值。
+
 ## v2 body 自动修正（`body_fixup.mode: v2`，默认）
 
 `../scripts/experiments/bisect/bisect-body*.js` / `bisect-headers.js` 单变量实验（见
@@ -122,9 +164,10 @@ curl http://127.0.0.1:8788/v1/chat/completions \
 关键项：`listen` / `upstream` / `db_path` / `strip_prefix` /
 `session.headers`+`fallback_key`+`passthrough_native` / `message.headers`+`passthrough_native` /
 `upstream_headers.{user_agent,authorization,client,project}` /
+`proxy.{url,no_proxy,from_env}` /
 `body_fixup.{mode,template_file,agent_template_file,tools_file}` /
 `log.{requests,keep_days}`。
-CLI `-listen` `-upstream` `-db` 可覆盖同名配置。默认只监听 `127.0.0.1`；
+CLI `-listen` `-upstream` `-db` `-proxy` 可覆盖同名配置。默认只监听 `127.0.0.1`；
 对外暴露前请自行加认证/防火墙（`_sessions` 是内部观测面）。
 
 ## 验证
