@@ -125,11 +125,17 @@ func TestPrepareBodyNonJSONPassthrough(t *testing.T) {
 // values; the compatibility layer must add the accepted tool surface and map
 // the effort without breaking JSON structure.
 func TestPrepareBodyNormalizesToolsAndEffort(t *testing.T) {
-	rawAgent, err := os.ReadFile("../opencode_agent_system_prompt.txt")
-	if err != nil {
-		t.Fatal(err)
+	// opencode_agent_system_prompt.txt 是第三方转储，被 .gitignore 排除
+	// （proprietary prompt dumps 段），且 v2 起模板注入已废弃——模板文件缺失是
+	// 受支持的常态（README：1.x 模板已不再注入，加载函数无调用点）。因此它不是
+	// 测试前置条件：转储缺失时用含 fixup.go 判定 marker 的合成模板兜底，让全新
+	// clone 也能跑满同一批断言，而不是在没有本地转储的机器上整条测试失败。
+	agent := "You are opencode. <synthetic agent template for tests>"
+	if rawAgent, err := os.ReadFile("../opencode_agent_system_prompt.txt"); err == nil {
+		agent = string(rawAgent)
+	} else {
+		t.Logf("未找到本地转储 ../opencode_agent_system_prompt.txt，改用合成模板: %v", err)
 	}
-	agent := string(rawAgent)
 	canonical, err := os.ReadFile("../opencode_tools.json")
 	if err != nil {
 		t.Fatal(err)
@@ -167,8 +173,31 @@ func TestPrepareBodyNormalizesToolsAndEffort(t *testing.T) {
 		names = append(names, tool.Function.Name)
 	}
 	joined := strings.Join(names, ",")
-	if !strings.Contains(joined, "custom") || !strings.Contains(joined, "bash") || !strings.Contains(joined, "read") {
-		t.Errorf("工具面未合并 canonical schema: %s", joined)
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	if !set["custom"] {
+		t.Errorf("调用方工具被丢弃: %s", joined)
+	}
+	// canonical 里的每一条都必须被合并进来。断言不硬编码具体工具名：仓库根的
+	// opencode_tools.json 是「满足准入的最小版」（只含 read），而本地可覆盖成完整
+	// 12 工具转储——两种情况下该断言都成立，且换成完整转储时自动覆盖更多条目。
+	var canonicalList []struct {
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(canonical, &canonicalList); err != nil || len(canonicalList) == 0 {
+		t.Fatalf("canonical 工具面不可解析: %v", err)
+	}
+	for _, c := range canonicalList {
+		if c.Function.Name == "" {
+			continue
+		}
+		if !set[c.Function.Name] {
+			t.Errorf("canonical 工具 %q 未合并: %s", c.Function.Name, joined)
+		}
 	}
 }
 
