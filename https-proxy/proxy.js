@@ -9,7 +9,7 @@
 //
 // 这里**没有**任何 header/body 改写逻辑：opencode 免费道的 v2 兼容层
 // （端点改写、身份头组、会话铸造、read 工具补齐、SSE→JSON 回组）由
-// 仓库的 Go 版 `../proxy-go/` 承担，两者互不依赖。
+// 仓库的 Go 版 `../opencode-proxy-go/` 承担，两者互不依赖。
 //
 // 说明：标准 HTTPS_PROXY 的 CONNECT 默认是**盲隧道**，TLS 载荷不被解密；
 // 要看 HTTPS 请求明文，有两种办法：
@@ -698,7 +698,7 @@ if (HTTPS_PORT > 0) {
       }
       const httpsServer = https.createServer(tlsOptions, handleRequest)
       httpsServer.on('error', (error) => {
-        // HTTPS 反向监听是可选能力：端口被占用（常见于 proxy-go 默认监听 8788）
+        // HTTPS 反向监听是可选能力：端口被占用（常见于 opencode-proxy-go 默认监听 8788）
         // 时只记录告警，不能让已经可用的 HTTP 代理跟着退出。
         logEvent({
           event: 'https_error',

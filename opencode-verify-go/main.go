@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// verify-go：准入规则验证程序（Go 版）
+// opencode-verify-go：准入规则验证程序（Go 版）
 //
 //	离线（默认）：复刻的双门准入逻辑 × 24 针实测证据表逐条比对，零网络、零额度消耗。
 //	在线（-live）：向真实端点重放同一组用例，比对实际状态码与预测（消耗免费额度）。
@@ -51,7 +51,7 @@ func runOffline(cases []probeCase) int {
 	fmt.Println("  门① x-opencode-session: ^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$（先执行，P23）")
 	fmt.Println("  门② user-agent: 子串解析 opencode/<semver> >= 1.18.0（失败403/过旧426，P8~P24）")
 	fmt.Println("  不参与准入: x-opencode-request / x-opencode-client / x-opencode-project / body（P9/P15/P19）")
-	fmt.Println("  期望值: data/replay/probe-matrix*.json 实测状态码 | 规则: verify-go/admit.go")
+	fmt.Println("  期望值: data/replay/probe-matrix*.json 实测状态码 | 规则: opencode-verify-go/admit.go")
 	fmt.Println()
 
 	now := time.Now()

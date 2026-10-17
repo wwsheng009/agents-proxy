@@ -4,7 +4,7 @@
 > 通用代理机制见 [`proxy.md`](./proxy.md)；WorkBuddy 见 [`workbuddy.md`](./workbuddy.md)。
 >
 > 注意分工：`https-proxy` **只观测不改写**；让 opencode 免费道通过准入的改写逻辑在
-> [`../../proxy-go/`](../../proxy-go/README.md)。两者用途不同。
+> [`../../opencode-proxy-go/`](../../opencode-proxy-go/README.md)。两者用途不同。
 
 ---
 
@@ -107,16 +107,16 @@ traceparent / b3
 
 ---
 
-## 5. 与 proxy-go 的分工
+## 5. 与 opencode-proxy-go 的分工
 
 | 需求 | 用哪个 |
 |---|---|
 | 观察 opencode 真实发出的请求 | `https-proxy` 反向模式（本文） |
-| 让任意 OpenAI 客户端通过 opencode 免费道 | [`proxy-go`](../../proxy-go/README.md)（会改写 header/body） |
-| 两者同时跑 | 可以：`https-proxy` 用 8787/8789，`proxy-go` 用 8788 |
+| 让任意 OpenAI 客户端通过 opencode 免费道 | [`opencode-proxy-go`](../../opencode-proxy-go/README.md)（会改写 header/body） |
+| 两者同时跑 | 可以：`https-proxy` 用 8787/8789，`opencode-proxy-go` 用 8788 |
 
-`proxy-go` 的兼容改写（v2 身份头、`read` 工具、`stream:true`、会话映射）在
-[`../../proxy-go/README.md`](../../proxy-go/README.md)；它不负责通用观测。
+`opencode-proxy-go` 的兼容改写（v2 身份头、`read` 工具、`stream:true`、会话映射）在
+[`../../opencode-proxy-go/README.md`](../../opencode-proxy-go/README.md)；它不负责通用观测。
 
 ---
 

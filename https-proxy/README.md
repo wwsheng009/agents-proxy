@@ -2,7 +2,7 @@
 
 零第三方依赖的 Node.js 单文件代理，**只做两件事：转发、记录**（可选 MITM 解密）。
 它不改写 URL、header 或 body；opencode 免费道的兼容改写见
-[`../proxy-go/`](../proxy-go/README.md)。
+[`../opencode-proxy-go/`](../opencode-proxy-go/README.md)。
 
 ## 文档（按 Agent 拆分）
 
@@ -25,7 +25,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File https-proxy\scripts\start-proxy.ps
 | 端口 | 协议 | 用途 |
 |---|---|---|
 | `8787` | HTTP | 标准代理 / 反向代理 |
-| `8788` | HTTP | `proxy-go`（不归本目录） |
+| `8788` | HTTP | `opencode-proxy-go`（不归本目录） |
 | `8789` | HTTPS | HTTPS 代理（先 TLS 再 CONNECT）/ 直连观测 |
 
 健康检查：
@@ -82,7 +82,7 @@ node scripts\show-log.js --raw
 
 | 位置 | 说明 |
 |---|---|
-| [`../proxy-go/`](../proxy-go/README.md) | opencode 免费道兼容代理（v2 改写 + SQLite 会话映射） |
+| [`../opencode-proxy-go/`](../opencode-proxy-go/README.md) | opencode 免费道兼容代理（v2 改写 + SQLite 会话映射） |
 | [`../scripts/start-opencode.ps1`](../scripts/start-opencode.ps1) | 设置代理环境变量并启动 opencode |
 | [`../docs/`](../docs/README.md) | 设计与逆向分析文档 |
 

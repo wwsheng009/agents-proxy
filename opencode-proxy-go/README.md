@@ -1,4 +1,4 @@
-# proxy-go —— opencode 免费道独立代理服务（Go，v2 兼容层）
+# opencode-proxy-go —— opencode 免费道独立代理服务（Go，v2 兼容层）
 
 单二进制 HTTP 代理：让**任意程序**以 OpenAI 兼容方式接入 opencode 免费道，
 代理在转发时统一改写为 **opencode v2 准入**所需的身份 header 与 body，
@@ -8,7 +8,7 @@
 > 代码见 git 历史提交 `1afd58a`；通用观测部分现独立为 [`../https-proxy/`](../https-proxy/README.md)）。
 > v2 指纹与准入的实验证据、端点迁移、毒头结论见
 > [`../docs/分析-opencode-v2指纹与准入.md`](../docs/分析-opencode-v2指纹与准入.md)；
-> ID 算法证据见 `../docs/分析-会话标识与免费额度校验.md` 与 `../verify-go/`。
+> ID 算法证据见 `../docs/分析-会话标识与免费额度校验.md` 与 `../opencode-verify-go/`。
 
 ## v2 与 1.x 的关键差异（本代理已全部对齐）
 
@@ -27,7 +27,7 @@
 ## 工作方式
 
 ```
-其它程序 ──HTTP──▶ proxy-go(:8788) ──改写 header/body──▶ https://opencode.ai/inference/v1
+其它程序 ──HTTP──▶ opencode-proxy-go(:8788) ──改写 header/body──▶ https://opencode.ai/inference/v1
                      │
                      ├─ 端点改写：/v1/* → /inference/v1/*；/v1beta/models → /inference/v1/models
                      ├─ session key（session.headers 按序匹配，缺失→fallback 桶；
@@ -48,7 +48,7 @@ ses 降序) + 14位base62`，同毫秒 counter 自增；与原 JS 实现黄金�
 ## 快速开始
 
 ```powershell
-cd proxy-go
+cd opencode-proxy-go
 go run .                      # 默认 127.0.0.1:8788，读 ./config.yaml，库 ./proxy-go.db
 go run . -listen 0.0.0.0:8788 # 局域网可访问
 go run . -config other.yaml -upstream https://opencode.ai -db D:\data\proxy.db

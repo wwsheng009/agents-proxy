@@ -148,7 +148,7 @@ func readToolFrom(canonical json.RawMessage) json.RawMessage {
 }
 
 // readAsset accepts paths relative to either the working directory or its
-// parent, so `go run .` works from proxy-go/ as well as from the repo root.
+// parent, so `go run .` works from opencode-proxy-go/ as well as from the repo root.
 func readAsset(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err == nil || filepath.IsAbs(path) {

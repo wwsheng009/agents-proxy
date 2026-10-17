@@ -6,7 +6,7 @@
 | 文档 | 适用对象 | 内容 |
 |---|---|---|
 | [`proxy.md`](./proxy.md) | 所有客户端 | 工作方式、启动、端口、证书、日志、通用排障 |
-| [`opencode.md`](./opencode.md) | opencode CLI | 为什么标准代理抓不到、自定义 provider + 反向代理、与 `proxy-go` 的分工 |
+| [`opencode.md`](./opencode.md) | opencode CLI | 为什么标准代理抓不到、自定义 provider + 反向代理、与 `opencode-proxy-go` 的分工 |
 | [`workbuddy.md`](./workbuddy.md) | WorkBuddy AI | Electron 结构、`http.proxy` 设置、私有 CA bundle、实测证据 |
 
 新增其它 Agent（如 Cursor、Claude Code、CodeBuddy CLI）时，在本目录再建一份
@@ -19,10 +19,10 @@
 | 端口 | 归属 | 协议 | 用途 |
 |---|---|---|---|
 | `8787` | `https-proxy` | HTTP | 标准代理 / 反向代理入口 |
-| `8788` | `proxy-go` | HTTP | opencode 免费道兼容代理（会改写请求） |
+| `8788` | `opencode-proxy-go` | HTTP | opencode 免费道兼容代理（会改写请求） |
 | `8789` | `https-proxy` | HTTPS | HTTPS 代理（先 TLS 再 CONNECT）/ 直连观测 |
 
-`https-proxy` 的启动脚本默认用 `8789` 作为 HTTPS 端口，避开 `proxy-go` 的 `8788`；
+`https-proxy` 的启动脚本默认用 `8789` 作为 HTTPS 端口，避开 `opencode-proxy-go` 的 `8788`；
 被占用时自动向后顺延最多 20 个端口。
 
 ---

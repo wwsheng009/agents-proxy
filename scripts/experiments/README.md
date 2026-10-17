@@ -13,7 +13,7 @@
 > **拆分影响（2026-10-17）**：`smoke/*.mjs` 会 spawn 根目录的 `proxy.js`，该文件含 zen
 > 兼容层，已在拆分中移除（通用观测部分迁到 `https-proxy/`）。因此 `smoke/` 下的脚本
 > **不再可直接运行**，需从 git 历史提交 `1afd58a` 取回当时的 `proxy.js` 才能复现；
-> 现行兼容层实现见 [`../../proxy-go/`](../../proxy-go/README.md)。
+> 现行兼容层实现见 [`../../opencode-proxy-go/`](../../opencode-proxy-go/README.md)。
 
 ## 目录与用途
 

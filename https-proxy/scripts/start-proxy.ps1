@@ -8,11 +8,11 @@
 #        客户端必须信任 certs\ca.pem，否则会报证书错误；需要系统有 openssl。
 #
 # 本脚本只负责「转发 + 记录」的通用观测代理（proxy.js）；opencode 兼容改写由
-# 仓库根 proxy-go/ 负责，两者互不依赖。
+# 仓库根 opencode-proxy-go/ 负责，两者互不依赖。
 #
 # 可选环境变量（启动前设置）:
 #   PORT            HTTP 监听端口，默认 8787
-#   HTTPS_PORT      HTTPS 监听端口，默认 8789（证书缺失时自动生成；8788 留给 proxy-go；
+#   HTTPS_PORT      HTTPS 监听端口，默认 8789（证书缺失时自动生成；8788 留给 opencode-proxy-go；
 #                   端口被占用时自动顺延到下一个空闲端口）
 #   TARGET_BASE_URL 反向代理目标；**留空 = 仅标准代理模式**（请求行需带绝对 URL）
 #   MITM            等价于 -Mitm（true/false），环境变量方式便于其它脚本调用
@@ -63,7 +63,7 @@ Remove-Item Env:LOG_SENSITIVE_HEADERS -ErrorAction SilentlyContinue
 $env:TLS_KEY_FILE = $keyFile
 $env:TLS_CERT_FILE = $crtFile
 
-# 2a. HTTPS 端口占用时自动顺延（8788 常被 proxy-go 占用；HTTPS 反向监听是可选能力）
+# 2a. HTTPS 端口占用时自动顺延（8788 常被 opencode-proxy-go 占用；HTTPS 反向监听是可选能力）
 function Test-LoopbackPortFree([int]$Port) {
     $listener = $null
     try {

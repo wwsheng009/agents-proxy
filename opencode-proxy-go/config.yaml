@@ -1,4 +1,4 @@
-# proxy-go —— opencode 免费道独立代理配置（v2）
+# opencode-proxy-go —— opencode 免费道独立代理配置（v2）
 #
 # 客户端请求 {listen}{path} → 转发到 {upstream}{path}（可先 strip_prefix）。
 # v2 拓扑：其它程序 POST http://127.0.0.1:8788/v1/chat/completions

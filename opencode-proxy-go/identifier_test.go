@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// 黄金向量：与 verify-go / 原 JS 实现（identifier.ts 复刻）逐字节一致。
+// 黄金向量：与 opencode-verify-go / 原 JS 实现（identifier.ts 复刻）逐字节一致。
 // ts=1790000000000, counter=1 → desc=f3baf93ffffe asc=0c4506c00001
 func TestIDGoldenVectors(t *testing.T) {
 	ts := time.UnixMilli(1790000000000)

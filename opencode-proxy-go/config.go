@@ -133,7 +133,7 @@ func LoadConfig(path string) (Config, error) {
 		return cfg, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	// Asset paths are relative to the config file, not the process cwd, so the
-	// proxy behaves the same when launched from the repo root or proxy-go/.
+	// proxy behaves the same when launched from the repo root or opencode-proxy-go/.
 	base := filepath.Dir(path)
 	cfg.BodyFixup.TemplateFile = resolveConfigPath(base, cfg.BodyFixup.TemplateFile)
 	cfg.BodyFixup.AgentTemplateFile = resolveConfigPath(base, cfg.BodyFixup.AgentTemplateFile)

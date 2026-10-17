@@ -4,7 +4,7 @@ node_modules/
 # --- build output ---
 *.exe
 *.exe~
-proxy-go/proxy-go
+opencode-proxy-go/opencode-proxy-go
 
 # --- logs（代理抓包日志含完整 header/body/token/API key，绝不入库） ---
 *.log
@@ -38,8 +38,8 @@ certs*/
 # --- proprietary prompt dumps（第三方转储，不入库） ---
 opencode_*system_prompt*.txt
 
-# --- local tool-face override（proxy-go 侧本地覆盖，不入库；仓库根那份 opencode_tools.json 是自带基线，跟踪） ---
-/proxy-go/opencode_tools.json
+# --- local tool-face override（opencode-proxy-go 侧本地覆盖，不入库；仓库根那份 opencode_tools.json 是自带基线，跟踪） ---
+/opencode-proxy-go/opencode_tools.json
 
 # --- generated TLS material（含私钥，绝不入库） ---
 certs/

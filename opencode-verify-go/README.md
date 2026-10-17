@@ -1,4 +1,4 @@
-# verify-go —— 准入规则验证程序（Go）
+# opencode-verify-go —— 准入规则验证程序（Go）
 
 对 `https://opencode.ai/zen/v1/chat/completions` 的**双门准入规则**做可复算验证：
 复刻判定逻辑 × 24 针实测证据表逐条比对。完整证据链见
@@ -40,7 +40,7 @@ go run . -live -case P23       # 只发一针
 go run . -live -max-tokens 8   # 压小生成量省额度（默认即 8；0=原样）
 ```
 
-- 在线模式自动探测 payload：`data/replay/muc7umlx-1qdmbboy.json`（在 `verify-go/` 内运行时回退 `../data/replay/…`）。
+- 在线模式自动探测 payload：`data/replay/muc7umlx-1qdmbboy.json`（在 `opencode-verify-go/` 内运行时回退 `../data/replay/…`）。
 - 结果写入 `data/replay/probe-matrix-go.json`；`429/401/5xx` 归为 `inconclusive`（额度/系统），不构成准入证据。
 - body 不参与准入（文档 §7 已注明为推断边界），因此压小 `max_tokens` 不改变判定。
 

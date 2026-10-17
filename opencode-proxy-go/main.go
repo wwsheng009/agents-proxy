@@ -60,7 +60,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("proxy-go listening",
+		slog.Info("opencode-proxy-go listening",
 			"listen", cfg.Listen, "upstream", cfg.Upstream, "db", cfg.DBPath)
 		errCh <- srv.ListenAndServe()
 	}()

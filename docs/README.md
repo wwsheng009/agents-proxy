@@ -31,13 +31,13 @@
 
 | 位置 | 说明 |
 |---|---|
-| [`../proxy-go/`](../proxy-go/README.md) | 独立 Go 代理服务（v2 兼容层 + SQLite 会话映射）——**opencode 兼容的现行实现** |
+| [`../opencode-proxy-go/`](../opencode-proxy-go/README.md) | 独立 Go 代理服务（v2 兼容层 + SQLite 会话映射）——**opencode 兼容的现行实现** |
 | [`../https-proxy/`](../https-proxy/README.md) | 通用 HTTP/HTTPS 请求观测代理（只转发+记录，无改写）；接入文档在 [`../https-proxy/docs/`](../https-proxy/docs/README.md) |
-| [`../verify-go/`](../verify-go/README.md) | 准入规则离线验证程序（24 针证据表比对 + 可选在线重放） |
+| [`../opencode-verify-go/`](../opencode-verify-go/README.md) | 准入规则离线验证程序（24 针证据表比对 + 可选在线重放） |
 | [`../scripts/experiments/`](../scripts/experiments/README.md) | 一次性判别 / 差分 / 重放实验脚本（保留归档，结论可复现） |
 
 > **拆分说明（2026-10-17）**：根目录的 Node 单文件 `proxy.js`（含 `ZEN_COMPAT` 兼容层）
-> 已拆分为 `../https-proxy/proxy.js`（纯观测）+ `../proxy-go/`（兼容层）。
+> 已拆分为 `../https-proxy/proxy.js`（纯观测）+ `../opencode-proxy-go/`（兼容层）。
 > 下文文档中出现的 `proxy.js` 兼容层描述均为拆分前实现的记录，代码见 git 历史提交 `1afd58a`。
 
 ## 合规声明

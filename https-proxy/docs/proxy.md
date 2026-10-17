@@ -15,13 +15,13 @@
 | 目录 | 角色 | 默认端口 | 是否改写 |
 |---|---|---|---|
 | `https-proxy/` | 通用 HTTP/HTTPS **观测**代理 | HTTP `8787` / HTTPS `8789` | 否 |
-| `proxy-go/` | opencode 免费道**兼容**代理 | `8788` | 是 |
+| `opencode-proxy-go/` | opencode 免费道**兼容**代理 | `8788` | 是 |
 
 两者可同时运行，端口不能撞：
 
 ```text
 127.0.0.1:8787  https-proxy  HTTP 监听
-127.0.0.1:8788  proxy-go     兼容代理
+127.0.0.1:8788  opencode-proxy-go     兼容代理
 127.0.0.1:8789  https-proxy  HTTPS 监听
 ```
 
@@ -145,7 +145,7 @@ curl.exe -sS --ssl-no-revoke --cacert https-proxy\certs\ca.pem https://127.0.0.1
 | HTTP 端口被占用 | 打印错误并以非零码退出 |
 | HTTPS 端口被占用（脚本） | 自动顺延 |
 | HTTPS 端口被占用（直接 `node proxy.js`） | 记 `https_error`，HTTP 继续服务 |
-| `proxy-go` 占用 8788 | 预期行为 |
+| `opencode-proxy-go` 占用 8788 | 预期行为 |
 
 ---
 
@@ -288,7 +288,7 @@ node scripts\show-log.js --file D:\x.log
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `EADDRINUSE 127.0.0.1:8788` | `proxy-go` 占用 | 正常，改用 8789 |
+| `EADDRINUSE 127.0.0.1:8788` | `opencode-proxy-go` 占用 | 正常，改用 8789 |
 | `EADDRINUSE 127.0.0.1:8789` | 端口被占 | 脚本自动顺延，或清 `$env:HTTPS_PORT` |
 | `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | 客户端未信任 CA | 见 §5.4 |
 | `WRONG_VERSION_NUMBER` | 明文端口用了 `https://` | 8787 用 `http://`，8789 用 `https://` |

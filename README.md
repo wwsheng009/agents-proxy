@@ -4,29 +4,29 @@
 
 | 目录 | 角色 | 语言 |
 |---|---|---|
-| [`proxy-go/`](./proxy-go/README.md) | **opencode 免费道兼容代理**（v2 准入改写 + 会话稳定映射 + SQLite），现行主实现 | Go |
+| [`opencode-proxy-go/`](./opencode-proxy-go/README.md) | **opencode 免费道兼容代理**（v2 准入改写 + 会话稳定映射 + SQLite），现行主实现 | Go |
 | [`https-proxy/`](./https-proxy/README.md) | **通用 HTTP/HTTPS 请求观测代理**：只转发、只记录，不改写任何内容 | Node（零依赖） |
 
 ```text
 opencode-proxy/
-├── proxy-go/          # opencode v2 兼容代理（Go 单二进制）
+├── opencode-proxy-go/          # opencode v2 兼容代理（Go 单二进制）
 ├── https-proxy/       # 通用 HTTP/HTTPS 观测代理（Node，含本地证书与启动脚本）
-├── verify-go/         # 准入规则离线验证程序（24 针证据表比对 + 可选在线重放）
+├── opencode-verify-go/         # 准入规则离线验证程序（24 针证据表比对 + 可选在线重放）
 ├── docs/              # 设计与逆向分析文档
 ├── scripts/           # 工具脚本：start-opencode.ps1、日志抽取/重放、一次性实验
-├── opencode_tools.json# v2 准入所需的 canonical read 工具面（proxy-go 读取）
+├── opencode_tools.json# v2 准入所需的 canonical read 工具面（opencode-proxy-go 读取）
 └── data/              # 抓包/重放证据产物（本地保留，已 gitignore）
 ```
 
 > **拆分记录（2026-10-17）**：原先根目录的 Node 单文件 `proxy.js` 同时承担「zen 兼容改写」
-> 与「通用观测」两件事。现已拆分——兼容改写只保留在 `proxy-go/`，观测代理独立到
+> 与「通用观测」两件事。现已拆分——兼容改写只保留在 `opencode-proxy-go/`，观测代理独立到
 > `https-proxy/` 且**不再做任何改写**。旧 Node 兼容层实现见 git 历史（提交 `1afd58a`），
 > 相关文档中出现的 `proxy.js` 兼容层描述均为该历史实现的记录。
 
-## 快速开始 1：opencode 兼容代理（proxy-go）
+## 快速开始 1：opencode 兼容代理（opencode-proxy-go）
 
 ```powershell
-cd E:\projects\ai\opencode-proxy\proxy-go
+cd E:\projects\ai\opencode-proxy\opencode-proxy-go
 go run .                       # 默认 127.0.0.1:8788，读 ./config.yaml，库 ./proxy-go.db
 go run . -listen 0.0.0.0:8788  # 局域网可访问
 ```
@@ -43,7 +43,7 @@ curl http://127.0.0.1:8788/v1/chat/completions \
 
 代理在转发时统一补齐 v2 准入要素：端点 `/v1/*` → `/inference/v1/*`、`Bearer public`、
 四段 UA、四个会话头 + `traceparent`/`b3`、剥离 `msg_` 毒头、强制 `stream:true`、
-tools 缺 `read` 时前插 canonical 工具。详见 [`proxy-go/README.md`](./proxy-go/README.md)。
+tools 缺 `read` 时前插 canonical 工具。详见 [`opencode-proxy-go/README.md`](./opencode-proxy-go/README.md)。
 
 免费额度按 IP 限流（约 200 请求/天），`429` = 配额耗尽，等窗口重置。
 
@@ -55,7 +55,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File https-proxy\scripts\start-proxy.ps
 ```
 
 - HTTP `http://127.0.0.1:8787`、HTTPS `https://127.0.0.1:8789`（证书缺失时自动生成；
-  `8788` 默认留给 `proxy-go`，可用 `HTTPS_PORT` 覆盖）；
+  `8788` 默认留给 `opencode-proxy-go`，可用 `HTTPS_PORT` 覆盖）；
 - 反向代理：设 `TARGET_BASE_URL` 后把客户端 base URL 指向 `http://127.0.0.1:8787`；
 - 标准代理：`HTTP_PROXY`/`HTTPS_PROXY` 指向 `http://127.0.0.1:8787`；
 - 日志为 JSON Lines，按 `id` 串起 request / response / response_body / error 四个阶段。
@@ -98,7 +98,7 @@ WorkBuddy 的代理由自己的 `settings.json`（`http.proxy`）驱动；它的
   [分析-会话标识与免费额度校验.md](./docs/分析-会话标识与免费额度校验.md)。
 - 请求全量参数/header、ID 唯一性机制与脚本映射见 [请求参数与Header说明.md](./docs/请求参数与Header说明.md)。
 - 逆向全过程总账：时间线、踩坑清单、成功请求三扇门完整要求见 [过程与坑.md](./docs/过程与坑.md)。
-- Go 版准入规则验证程序见 [verify-go/](./verify-go/README.md)。
+- Go 版准入规则验证程序见 [opencode-verify-go/](./opencode-verify-go/README.md)。
 - 一次性实验脚本索引见 [scripts/experiments/](./scripts/experiments/README.md)。
 
 ## 合规
