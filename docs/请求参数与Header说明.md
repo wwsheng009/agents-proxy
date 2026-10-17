@@ -185,8 +185,8 @@ msg_0c786447b001… 时间段解码 → 2026-09-22T05:11:00.475Z（首条用户�
 
 | 脚本 | 输入 | 输出 | 涉及的参数/header |
 |---|---|---|---|
-| `proxy.js` | 上游 `TARGET_BASE_URL` + 环境变量 | 终端 / `proxy.log`（JSON Lines） | 记录全部 header（敏感项默认脱敏）、body 摘要/预览；参数见 §3.2 |
-| `scripts/start-proxy.ps1` | — | 启动代理 | `PORT`/`HTTPS_PORT`/`TARGET_BASE_URL`/`LOG_FILE`/`LOG_BODY`/`LOG_SENSITIVE_HEADERS` |
+| `https-proxy/proxy.js` | 上游 `TARGET_BASE_URL` + 环境变量 | 终端 / `proxy.log`（JSON Lines） | 记录全部 header（敏感项默认脱敏）、body 摘要/预览；参数见 §3.2。**只观测不改写**，兼容改写见 `proxy-go/` |
+| `https-proxy/scripts/start-proxy.ps1` | — | 启动观测代理 | `PORT`/`HTTPS_PORT`/`TARGET_BASE_URL`/`LOG_FILE`/`LOG_BODY`/`LOG_SENSITIVE_HEADERS` |
 | `scripts/start-opencode.ps1` | — | 启动 opencode（注入 `HTTP_PROXY`/`NO_PROXY`/`NODE_EXTRA_CA_CERTS`） | 让流量经过代理 |
 | `scripts/extract-payloads.js` | `proxy.log` | `data/replay/*.json` + `manifest.json`（含**每个请求的完整 header 快照**） | 判定 `complete`/`jsonParseOk`（预览是否截断） |
 | `scripts/replay-payloads.js` | `manifest.json` + 本地 payload | 经本地代理重放到上游的 HTTP 状态 | 重放时跳过 `host/content-length/connection/transfer-encoding`，其余 header 原样 |
@@ -195,7 +195,7 @@ msg_0c786447b001… 时间段解码 → 2026-09-22T05:11:00.475Z（首条用户�
 | `proxy-go/`（Go 子模块） | config.yaml + 抓包 system 模板 | 本地监听 + `data/replay/proxy-go.db` | **独立代理服务**：header 重写/会话稳定映射/SQLite；门③自动修正（注入模板+强制流式+SSE→JSON） |
 | `scripts/probe-response.js` | manifest 首条完整 payload（仅压小 `max_tokens` 强制快收流） | `data/replay/resp-headers.txt` + `resp-body.sse` | 抓**响应**头与完整 SSE，检查 usage/cost/限流字段（§8） |
 | `verify-go/`（Go 子模块） | 24 针证据表 + 复刻双门规则 | 终端报告 / `data/replay/probe-matrix-go.json` | **验证程序**：离线 `go run .` 零耗额度；`-live` 在线重放比对；`go test` 含 ID 生成黄金向量；2026-09-22 在线复验 **24/24 匹配** |
-| `scripts/generate-cert.ps1` | — | `certs/ca.pem`、`server.crt`、`server.key` | HTTPS 反代用，与上游 header 无关 |
+| `https-proxy/scripts/generate-cert.ps1` | — | `https-proxy/certs/ca.pem`、`server.crt`、`server.key` | HTTPS 反代用，与上游 header 无关 |
 
 常用命令：
 

@@ -4,7 +4,8 @@
 代理在转发时统一改写为 **opencode v2 准入**所需的身份 header 与 body，
 并把「入站会话 → 上游会话」的对应关系做**稳定映射 + 缓存 + SQLite 持久化**。
 
-> 功能基准是仓库根目录的 Node 版 [`../proxy.js`](../proxy.js)（`ZEN_COMPAT`）。
+> 功能基准是拆分前仓库根目录的 Node 版 `proxy.js`（`ZEN_COMPAT`，2026-10-17 拆分后已移除，
+> 代码见 git 历史提交 `1afd58a`；通用观测部分现独立为 [`../https-proxy/`](../https-proxy/README.md)）。
 > v2 指纹与准入的实验证据、端点迁移、毒头结论见
 > [`../docs/分析-opencode-v2指纹与准入.md`](../docs/分析-opencode-v2指纹与准入.md)；
 > ID 算法证据见 `../docs/分析-会话标识与免费额度校验.md` 与 `../verify-go/`。

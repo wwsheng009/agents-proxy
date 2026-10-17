@@ -94,6 +94,10 @@ POST https://opencode.ai/inference/v1/chat/completions
 
 ## 四、本代理（opencode-proxy）v2 适配（已完整打通，端到端 200 验证）
 
+> **拆分说明（2026-10-17）**：本节描述的 `proxy.js` 兼容层（`ZEN_COMPAT`）已随拆分移除，
+> 兼容改写现由 [`../proxy-go/`](../proxy-go/README.md) 实现（规则与本节逐条对齐）。
+> 下文为拆分前 Node 实现的记录，代码见 git 历史提交 `1afd58a`。
+
 `proxy.js` 兼容层（`ZEN_COMPAT`，默认开）当前行为：
 - **端点路由**：`/v1/*` 与裸 OpenAI 路径 → `/inference/v1/*`；`/v1beta/models`（Gemini 探测）→ `/inference/v1/models`；`/zen/v1/*` 显式路径原样透传（2026-10-16 复验：`read` 注入后同样 200，见本节末尾复验记录）；
 - **身份头**：`Bearer public`、UA `opencode/latest/2.0.29/cli`（`ZEN_USER_AGENT` 可覆盖）、v2 算法铸造 `ses_` 会话（同 key 稳定映射）、`x-opencode-session-id`/`x-session-affinity`/`x-session-id`、`traceparent`/`b3`；**删除 `x-opencode-request`（msg_ 毒头）**；

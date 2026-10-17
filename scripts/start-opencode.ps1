@@ -6,8 +6,11 @@
 #
 # 传给本脚本的所有参数都会原样透传给 opencode。
 #
+# 依赖的是 https-proxy/ 里的通用观测代理（默认 8787）。请先另开终端运行：
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File https-proxy\scripts\start-proxy.ps1
+#
 # 可选环境变量（启动前设置）:
-#   PROXY_PORT      代理 HTTP 端口，默认 8787
+#   PROXY_PORT      观测代理 HTTP 端口，默认 8787
 #   NO_PROXY_EXTRA  追加到 NO_PROXY 的地址（逗号分隔）
 
 # 本脚本不声明 param 块：所有入参进入 $args，原样透传给 opencode。
@@ -24,7 +27,7 @@ try {
     $null = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3
 } catch {
     Write-Host "[opencode] 代理未运行: $healthUrl"
-    Write-Host "[opencode] 请先在另一个终端运行 scripts\start-proxy.ps1"
+    Write-Host "[opencode] 请先在另一个终端运行 https-proxy\scripts\start-proxy.ps1"
     exit 1
 }
 
@@ -38,7 +41,7 @@ $env:HTTPS_PROXY = $proxyUrl
 $env:NO_PROXY = $noProxy
 
 # 3. 信任本地 CA（访问代理自己的 HTTPS 端点时需要）
-$caFile = Join-Path $projectRoot "certs\ca.pem"
+$caFile = Join-Path $projectRoot "https-proxy\certs\ca.pem"
 if (Test-Path $caFile) {
     $env:NODE_EXTRA_CA_CERTS = $caFile
 }

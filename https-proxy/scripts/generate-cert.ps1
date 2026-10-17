@@ -1,3 +1,7 @@
+# generate-cert.ps1 - 生成本地调试用 CA / 服务器证书 / 私钥（默认输出 <https-proxy>\certs）。
+# 产出：ca.pem（可信任）、ca.key（MITM 现签域名证书用）、server.crt/server.key（HTTPS 监听用）。
+# 仅供本机 HTTPS 观测代理使用；私钥禁止提交或外发（certs/ 已被 .gitignore 排除）。
+
 param(
     [string]$OutDir = (Join-Path $PSScriptRoot "..\certs"),
     [int]$ValidDays = 825
@@ -35,7 +39,7 @@ $notAfter = [DateTimeOffset]::UtcNow.AddDays($ValidDays)
 # Local CA used only by this debugging proxy.
 $caRsa = [System.Security.Cryptography.RSA]::Create(2048)
 $caRequest = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-    "CN=opencode-proxy local CA",
+    "CN=https-proxy local CA",
     $caRsa,
     [System.Security.Cryptography.HashAlgorithmName]::SHA256,
     [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
@@ -96,20 +100,29 @@ $rng.GetBytes($serial)
 $rng.Dispose()
 $serverCert = $serverRequest.Create($caCert, $notBefore, $notAfter, $serial)
 
-Export-CertPem $caCert $caCertPath
-Export-CertPem $serverCert $serverCertPath
 $exportKeyMethod = $serverRsa.GetType().GetMethods() |
     Where-Object { $_.Name -eq "ExportPkcs8PrivateKeyPem" -and $_.GetParameters().Count -eq 0 } |
     Select-Object -First 1
 if (-not $exportKeyMethod) {
     throw "This PowerShell runtime does not support RSA.ExportPkcs8PrivateKeyPem()"
 }
+
+Export-CertPem $caCert $caCertPath
+Export-CertPem $serverCert $serverCertPath
+
 $keyPem = [string]$exportKeyMethod.Invoke($serverRsa, @())
 [System.IO.File]::WriteAllText($serverKeyPath, $keyPem + [Environment]::NewLine)
+
+# CA 私钥：MITM 模式按域名现签证书时必须用到（proxy.js MITM_CA_KEY 读取）。
+# 它等于本机调试环境的根信任，泄露即等于所有 HTTPS 都能被冒充，务必只留本机。
+$caKeyPath = Join-Path $resolvedOutDir "ca.key"
+$caKeyPem = [string]$exportKeyMethod.Invoke($caRsa, @())
+[System.IO.File]::WriteAllText($caKeyPath, $caKeyPem + [Environment]::NewLine)
 
 Write-Host "Generated local debugging certificates:"
 Write-Host "  CA:     $caCertPath"
 Write-Host "  Cert:   $serverCertPath"
 Write-Host "  Key:    $serverKeyPath"
+Write-Host "  CAKey:  $caKeyPath  (MITM 用)"
 Write-Host ""
-Write-Host "Use only on this machine. Do not commit or share the private key."
+Write-Host "Use only on this machine. Do not commit or share the private keys."

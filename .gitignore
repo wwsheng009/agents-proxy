@@ -6,8 +6,29 @@ node_modules/
 *.exe~
 proxy-go/proxy-go
 
-# --- logs（代理抓包日志可能含敏感 header/body） ---
+# --- logs（代理抓包日志含完整 header/body/token/API key，绝不入库） ---
 *.log
+*.log.*
+logs/
+https-proxy/proxy.log
+https-proxy/proxy-*.log
+
+# --- proxy capture artifacts（可能含明文请求体） ---
+*.jsonl
+
+# --- replay / capture evidence（本地抓包产物，不入库；需要时另行导出） ---
+data/
+
+# --- local CA / cert backups（含私钥，绝不入库） ---
+https-proxy/certs.backup-*/
+https-proxy/certs/
+certs*/
+*certs*.bak
+
+# --- local agent state（WorkBuddy / CodeBuddy 会话与日志） ---
+.workbuddy-ai/
+.workbuddy/
+.codebuddy/
 
 # --- env / secrets ---
 .env
@@ -23,8 +44,15 @@ opencode_*system_prompt*.txt
 # --- generated TLS material（含私钥，绝不入库） ---
 certs/
 .ca/
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.jks
 
-# --- runtime data（SQLite 及其临时文件，任意层级；data/replay 证据产物保留跟踪） ---
+# --- runtime data（SQLite 及其临时文件，任意层级） ---
 *.db
 *.db-*
 *.sqlite
