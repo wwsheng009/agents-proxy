@@ -348,6 +348,73 @@ func TestUpstreamURLJoin(t *testing.T) {
 	}
 }
 
+// live catalog 的新推理地址必须反向重写回 Console 兼容层 /zen/*。
+// 匿名免费道走 /inference/* 直连会被判 403 FreeTierError；兼容层会剥掉 Bearer public。
+func TestUpstreamURLRewritesInferenceCompat(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Upstream = "https://opencode.ai"
+	p, err := NewProxy(&cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ in, want string }{
+		// opencode provider（live catalog: /inference/openai/v1）
+		{"/inference/openai/v1/chat/completions", "https://opencode.ai/zen/v1/chat/completions"},
+		{"/inference/openai/v1/responses", "https://opencode.ai/zen/v1/responses"},
+		{"/inference/anthropic/v1/messages", "https://opencode.ai/zen/v1/messages"},
+		{"/inference/systemone/v1/systemone", "https://opencode.ai/zen/v1/systemone"},
+		{"/inference/google/v1beta/models/gemini-3:generateContent", "https://opencode.ai/zen/v1/models/gemini-3:generateContent"},
+		// opencode-go provider（live catalog: /inference/go/openai/v1）
+		{"/inference/go/openai/v1/chat/completions", "https://opencode.ai/zen/go/v1/chat/completions"},
+		{"/inference/go/openai/v1/responses", "https://opencode.ai/zen/go/v1/responses"},
+		{"/inference/go/anthropic/v1/messages", "https://opencode.ai/zen/go/v1/messages"},
+		{"/inference/go/v1/models", "https://opencode.ai/zen/go/v1/models"},
+		// 既有路径保持原样
+		{"/zen/v1/chat/completions", "https://opencode.ai/zen/v1/chat/completions"},
+		{"/zen/go/v1/chat/completions", "https://opencode.ai/zen/go/v1/chat/completions"},
+		// 旧 /inference/v1/* 匿名直连已 403 → 也重写回兼容层
+		{"/inference/v1/chat/completions", "https://opencode.ai/zen/v1/chat/completions"},
+		{"/inference/v1/models", "https://opencode.ai/zen/v1/models"},
+		// 裸 OpenAI 路径（客户端 baseURL /v1/chat/completions）→ 兼容层
+		{"/v1/chat/completions", "https://opencode.ai/zen/v1/chat/completions"},
+		{"/v1/models", "https://opencode.ai/zen/v1/models"},
+		{"/v1beta/models", "https://opencode.ai/zen/v1/models"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodPost, "http://local"+c.in, nil)
+		if got := p.upstreamURL(r); got != c.want {
+			t.Errorf("resolveTarget(%s): got %s want %s", c.in, got, c.want)
+		}
+	}
+}
+
+// 新路径重写后必须被识别为免费道，否则不会注入 v2 身份头（UA/session/client/project/trace）。
+func TestIsZenTargetInferenceCompat(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Upstream = "https://opencode.ai"
+	p, err := NewProxy(&cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/inference/openai/v1/chat/completions",
+		"/inference/openai/v1/responses",
+		"/inference/anthropic/v1/messages",
+		"/inference/go/openai/v1/chat/completions",
+		"/zen/go/v1/chat/completions",
+		"/zen/v1/models/gemini-3:generateContent",
+	} {
+		r := httptest.NewRequest(http.MethodPost, "http://local"+path, nil)
+		target := p.resolveTarget(r)
+		if !p.isZenTarget(target) {
+			t.Errorf("path %s -> %s 未识别为免费道", path, target.Path)
+		}
+		if strings.HasSuffix(target.Path, "/chat/completions") && !zenChatRe.MatchString(target.Path) {
+			t.Errorf("path %s -> %s 未识别为 chat 修正目标", path, target.Path)
+		}
+	}
+}
+
 // 注入模式端到端：极简非流式调用方 → 代理注入模板 + 强制 stream →
 // 假上游回 SSE → 代理组装回 JSON；断言上游 body 已合规、对外契约非流式。
 func TestE2EFixupTranslatesSSEToJSON(t *testing.T) {

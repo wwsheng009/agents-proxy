@@ -13,10 +13,13 @@ import (
 )
 
 // 免费道路径判定（取自 proxy.js ZEN_PATH_RE / isZenChatTarget）。
-// v2 起端点为 /inference/v1/*，v1 的 /zen/v1/* 仍在正则内以便自建镜像/重放。
+// live catalog 把 opencode 的 api 指向 /inference/{openai,anthropic,google,systemone}/v1/*，
+// 但匿名免费道必须走 Console 兼容层 /zen/*（inference-proxy.ts 会剥掉 Bearer public 再转发）。
+// resolveTarget 会先把新地址反向重写回 /zen/*；这里同时保留 /inference/v1/*（自建镜像/重放）
+// 与 /zen/go/v1/*（opencode-go）。
 var (
-	zenLaneRe = regexp.MustCompile(`/(?:zen/v1|inference/v1)/(?:chat/completions|responses|messages|models)/?$`)
-	zenChatRe = regexp.MustCompile(`/(?:zen/v1|inference/v1)/chat/completions/?$`)
+	zenLaneRe = regexp.MustCompile(`/(?:zen/(?:go/)?v1|inference/v1)/(?:chat/completions|responses|messages|systemone|usage|models)(?:/[^/]+(?::(?:generateContent|streamGenerateContent))?)?/?$`)
+	zenChatRe = regexp.MustCompile(`/(?:zen/(?:go/)?v1|inference/v1)/chat/completions/?$`)
 
 	// OpenAI/Gemini 风格路径 → v2 inference 通道（同 proxy.js resolveTarget）。
 	v1PathRe       = regexp.MustCompile(`^/v1(?:/|$)`)
@@ -48,13 +51,18 @@ func NewProxy(cfg *Config, store *Store) (*Proxy, error) {
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("解析 upstream 失败: %q", cfg.Upstream)
 	}
+	if strings.TrimSpace(cfg.Forwarder.Addr) != "" {
+		// Bun sidecar 是明文 HTTP；host/path 保持不变，路径改写与 isZenTarget 不受影响。
+		u.Scheme = "http"
+	}
 	// 出站 transport：连接池沿用默认值，代理（http/https/socks5）由配置决定。
 	tr, pf, err := buildTransport(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("构造出站 transport: %w", err)
 	}
-	slog.Info("upstream proxy resolved",
-		"configured", cfg.Proxy.URL, "no_proxy", cfg.Proxy.NoProxy, "from_env", cfg.Proxy.FromEnv)
+	slog.Info("upstream transport resolved",
+		"configured", cfg.Proxy.URL, "no_proxy", cfg.Proxy.NoProxy, "from_env", cfg.Proxy.FromEnv,
+		"forwarder", cfg.Forwarder.Addr)
 	p := &Proxy{
 		cfg:       cfg,
 		store:     store,
@@ -176,6 +184,9 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	zenChat := zen && zenChatRe.MatchString(target.Path)
 	// 本次请求实际使用的出站代理（与 transport 同一判定），用于日志与响应头。
 	via := p.effectiveProxy(&http.Request{URL: target})
+	if addr := strings.TrimSpace(p.cfg.Forwarder.Addr); addr != "" {
+		via = "forwarder:" + addr
+	}
 
 	// body 处理（mode=off 流式字节不动；v2 只对道内 chat 端点生效；
 	// 遗留 inject_template 保持历史全局行为）+ 构造上游请求
@@ -262,8 +273,11 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveTarget = upstream base.Path +（去前缀后的）入站 path + 原样 query，
-// 并在 zen_compat 下把裸 OpenAI/Gemini 风格路径改写到 v2 inference 通道
-// （同 proxy.js resolveTarget：已带 /zen/ 或 /inference/ 命名空间的路径原样保留）。
+// 并在 zen_compat 下：
+//   - 把 live catalog 的新推理地址 /inference/{openai,anthropic,google,systemone}/v1/*
+//     反向重写回 Console 兼容层 /zen/*（匿名免费道；见 rewriteInferenceCompat）；
+//   - 把裸 OpenAI/Gemini 风格路径与旧 /inference/v1/* 也改写到 /zen/* 兼容层
+//     （2026-10-18 实测：匿名 Bearer public 直连 /inference/v1/* 已 403，仅 /zen/* 过准入）。
 func (p *Proxy) resolveTarget(r *http.Request) *url.URL {
 	path := r.URL.Path
 	if sp := p.cfg.StripPrefix; sp != "" && strings.HasPrefix(path, sp) {
@@ -278,18 +292,53 @@ func (p *Proxy) resolveTarget(r *http.Request) *url.URL {
 	u.RawQuery = r.URL.RawQuery
 
 	// 仅对 opencode.ai 主机做通道改写，避免把别的上游的 /v1/* 也搬进 inference。
-	if p.cfg.ZenCompat && u.Hostname() == "opencode.ai" &&
-		!strings.HasPrefix(u.Path, "/zen/") && !strings.HasPrefix(u.Path, "/inference/") {
-		switch {
-		case v1PathRe.MatchString(u.Path):
-			u.Path = "/inference" + u.Path
-		case v1betaModelsRe.MatchString(u.Path):
-			u.Path = "/inference/v1/models"
-		case bareLaneRe.MatchString(u.Path):
-			u.Path = "/inference/v1" + strings.TrimSuffix(u.Path, "/")
+	if p.cfg.ZenCompat && u.Hostname() == "opencode.ai" {
+		u.Path = rewriteInferenceCompat(u.Path)
+		if !strings.HasPrefix(u.Path, "/zen/") && !strings.HasPrefix(u.Path, "/inference/") {
+			switch {
+			case v1PathRe.MatchString(u.Path):
+				u.Path = "/zen" + u.Path
+			case v1betaModelsRe.MatchString(u.Path):
+				u.Path = "/zen/v1/models"
+			case bareLaneRe.MatchString(u.Path):
+				u.Path = "/zen/v1" + strings.TrimSuffix(u.Path, "/")
+			}
 		}
 	}
 	return &u
+}
+
+// rewriteInferenceCompat 把 live catalog 的新推理地址反向映射到 Console 兼容层。
+// 依据 packages/console/app/src/lib/inference-proxy.ts 的路径表（反向）：
+//
+//	/inference/openai/v1/*            → /zen/v1/*
+//	/inference/anthropic/v1/*         → /zen/v1/*
+//	/inference/systemone/v1/*         → /zen/v1/*
+//	/inference/google/v1beta/models/* → /zen/v1/models/*
+//	/inference/go/openai/v1/*         → /zen/go/v1/*
+//	/inference/go/anthropic/v1/*      → /zen/go/v1/*
+//	/inference/go/systemone/v1/*      → /zen/go/v1/*
+//	/inference/go/v1/*                → /zen/go/v1/*
+//	/inference/v1/*                   → /zen/v1/*（旧 v2 通道，匿名直连已 403）
+//
+// 匿名免费道必须走兼容层：它会剥掉 Bearer public / x-api-key: public 再转发到新推理后端。
+func rewriteInferenceCompat(path string) string {
+	for _, m := range []struct{ from, to string }{
+		{"/inference/go/openai/v1/", "/zen/go/v1/"},
+		{"/inference/go/anthropic/v1/", "/zen/go/v1/"},
+		{"/inference/go/systemone/v1/", "/zen/go/v1/"},
+		{"/inference/go/v1/", "/zen/go/v1/"},
+		{"/inference/google/v1beta/models/", "/zen/v1/models/"},
+		{"/inference/openai/v1/", "/zen/v1/"},
+		{"/inference/anthropic/v1/", "/zen/v1/"},
+		{"/inference/systemone/v1/", "/zen/v1/"},
+		{"/inference/v1/", "/zen/v1/"},
+	} {
+		if strings.HasPrefix(path, m.from) {
+			return m.to + strings.TrimPrefix(path, m.from)
+		}
+	}
+	return path
 }
 
 func (p *Proxy) upstreamURL(r *http.Request) string {

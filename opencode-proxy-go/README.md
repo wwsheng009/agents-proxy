@@ -9,16 +9,36 @@
 > v2 指纹与准入的实验证据、端点迁移、毒头结论见
 > [`../docs/分析-opencode-v2指纹与准入.md`](../docs/分析-opencode-v2指纹与准入.md)；
 > ID 算法证据见 `../docs/分析-会话标识与免费额度校验.md` 与 `../opencode-verify-go/`。
+>
+> **2026-10-18 端点迁移更新**：live catalog 已把 `opencode.api` 改为
+> `https://opencode.ai/inference/openai/v1`，但匿名免费道**只有 `/zen/*` 兼容层能过准入**。
+> 本代理现在会把新 `/inference/*`、裸 `/v1/*`、旧 `/inference/v1/*` 统一重写回 `/zen/*`。
+> 详见 [`docs/`](./docs/README.md)（版本影响、根因、验证与排查手册）。
+>
+> **429 说明**：`429 FreeUsageLimitError` 表示**已过准入**，只是匿名免费额度/频率受限。
+> 若响应带 `Retry-After`，按该时间等待；2026-10-18 实测匿名免费层是**全局/每日额度**
+> （重置点 00:00 UTC / 08:00 CST），换 IP、换服务器、换 session 都无效。
+> 详见 [`docs/03`](./docs/03-verification-and-troubleshooting.md) §12。
+>
+> **会话头**：OpenCode 客户端发送 `x-opencode-session-id` / `x-session-affinity`；
+> 已在 `config.yaml` 的 `session.headers` 中收录，避免所有请求共用 `default` 桶
+> （历史 `hits=2561`）。详见 [`docs/03`](./docs/03-verification-and-troubleshooting.md) §11。
+>
+> **Bun 1.3.14 sidecar（2026-10-18 12:01 起必需）**：上游新增 Bun 1.3.14
+> TLS/HTTP2 指纹门；Go/Python/Bun 1.4.x 都会被 403，只有 Bun 1.3.14 能过。
+> 启动 [`forwarder/`](./forwarder/README.md)，并在 `config.yaml` 设置
+> `forwarder.addr: "127.0.0.1:8898"`。详见
+> [`docs/06`](./docs/06-bun-tls-fingerprint.md)。
 
 ## v2 与 1.x 的关键差异（本代理已全部对齐）
 
 | 维度 | 1.x（已失效） | v2（现行，本代理行为） |
 |---|---|---|
-| 端点 | `POST /zen/v1/chat/completions` | `POST /inference/v1/chat/completions`（`/v1/*`、裸 OpenAI/Gemini 路径自动改写；旧 `/zen/v1/*` 仍接受但上游已锁死） |
-| UA | `opencode/<semver>` | `opencode/<channel>/<version>/<artifact>`（`opencode/latest/2.0.29/cli`） |
+| 端点 | `POST /zen/v1/chat/completions` | **`POST /zen/v1/chat/completions`**（Console 兼容层）。客户端 live catalog 的 `/inference/{openai,anthropic,google,systemone}/v1/*`、裸 `/v1/*`、旧 `/inference/v1/*` 均由代理统一重写回 `/zen/*` |
+| UA | `opencode/<semver>` | `opencode/<channel>/<version>/<artifact>`（`opencode/latest/2.0.32/cli`） |
 | 会话头 | 仅 `x-opencode-session` | 会话 ID 同步到 4 个头：`x-opencode-session` / `x-opencode-session-id` / `x-session-affinity` / `x-session-id` |
 | 链路头 | 无 | `traceparent`（W3C）+ `b3`（Zipkin），每请求新生成 |
-| `x-opencode-request`（msg_） | 可选 | **毒头**：带上即 403。入站一律剥离，且**绝不注入上游** |
+| `x-opencode-request`（msg_） | 可选 | 旧 `/inference/v1` 毒头；2026-10-18 新 Console 兼容层会把它转成 `x-opencode-request-id`。本代理当前仍不注入（Bun 1.3.14 实测不影响 200） |
 | `body.stream` | 必须 true | **必须 true**（`stream:false` → 403） |
 | `body.tools` | 12 工具白名单且 ≥2 个 | **必须含名为 `read` 的 opencode 工具**（名称匹配即可；schema/顺序不限，可与自有工具混用） |
 | `system` 内容 | 必须含真实模板 | **完全不校验** → v2 模式不再注入任何模板 |
@@ -27,9 +47,11 @@
 ## 工作方式
 
 ```
-其它程序 ──HTTP──▶ opencode-proxy-go(:8788) ──改写 header/body──▶ https://opencode.ai/inference/v1
+其它程序 ──HTTP──▶ opencode-proxy-go(:8788) ──明文 HTTP──▶ Bun 1.3.14 forwarder(:8898) ──HTTPS──▶ opencode.ai
                      │
-                     ├─ 端点改写：/v1/* → /inference/v1/*；/v1beta/models → /inference/v1/models
+                     ├─ 端点改写：/v1/*、/v1beta/models、旧 /inference/v1/*、
+                     │            live catalog 的 /inference/{openai,anthropic,google,systemone}/v1/*
+                     │            → /zen/v1/*（opencode-go → /zen/go/v1/*）
                      ├─ session key（session.headers 按序匹配，缺失→fallback 桶；
                      │    可配原生 x-opencode-session 入口，值合法则原样透传）
                      │    └─ 同一 key 永远 → 同一条上游 ses_（内存缓存 → SQLite）
@@ -38,6 +60,8 @@
                      │    └─ 不带  ：每请求新生成 msg_（仅审计/观测，不上行）
                      ├─ 注入 v2 身份头：authorization / user-agent / 四个会话头 / traceparent + b3
                      │    （客户端自带的一切 x-opencode-* / 会话头 / 毒头先丢弃再统一注入）
+                     ├─ 出站：forwarder 启用时用明文 HTTP 拨 sidecar；
+                     │    sidecar 用 Bun 1.3.14 fetch 到 https://opencode.ai
                      └─ body 修正（仅道内 chat 端点）：强制 stream:true + 补齐 read 工具
 ```
 
@@ -48,11 +72,22 @@ ses 降序) + 14位base62`，同毫秒 counter 自增；与原 JS 实现黄金�
 ## 快速开始
 
 ```powershell
-cd opencode-proxy-go
+# 1) 先启动 Bun 1.3.14 forwarder（必须 1.3.14；1.4.x 会被上游 403）
+cd opencode-proxy-go\forwarder
+npm install bun@1.3.14 --prefix ..\.bun1314
+..\.bun1314\node_modules\bun\bin\bun.exe run forward.ts
+
+# 2) 再启动 Go 代理
+cd ..
 go run .                      # 默认 127.0.0.1:8788，读 ./config.yaml，库 ./proxy-go.db
 go run . -listen 0.0.0.0:8788 # 局域网可访问
 go run . -config other.yaml -upstream https://opencode.ai -db D:\data\proxy.db
 ```
+
+> forwarder 必须先启动；`config.yaml` 默认已配置
+> `forwarder.addr: "127.0.0.1:8898"`。详见
+> [`forwarder/README.md`](./forwarder/README.md) 与
+> [`docs/06`](./docs/06-bun-tls-fingerprint.md)。
 
 其它程序接入（session 由你方任意取值，代理负责稳定映射）：
 
@@ -64,7 +99,9 @@ curl http://127.0.0.1:8788/v1/chat/completions \
 ```
 
 - 上游 URL 由 `upstream` 决定：默认 `https://opencode.ai`，`/v1/chat/completions`
-  自动改写为 `/inference/v1/chat/completions`。**不要**把 `upstream` 写成 `…/zen`。
+  自动改写为 **`/zen/v1/chat/completions`**（2026-10-18 实测：匿名 `Bearer public`
+  直连 `/inference/v1/*` 已 403，只有 `/zen/*` 兼容层会剥离匿名凭据后转发）。
+  **不要**把 `upstream` 写成 `…/zen` 或 `…/inference`。
 - 响应头 `x-proxy-session` / `x-proxy-request` 可看到实际使用的上游 ID
   （`x-proxy-request` 仅审计/观测，msg_ 不再上行）。
 - 流式（`"stream":true`）逐块即写即刷，`[DONE]` 与尾部 cost 块原样透传；
@@ -72,6 +109,27 @@ curl http://127.0.0.1:8788/v1/chat/completions \
 - 入口 header 可配置（`session.headers` / `message.headers` 顺序匹配多个候选）；
   直接传原生 `x-opencode-session` 也可以——值已符合上游结构时**原样透传**
   （见 `passthrough_native`），否则照常稳定重映射。
+
+## Bun 1.3.14 sidecar（2026-10-18 12:01 起必需）
+
+上游新增了 Bun 1.3.14 的 TLS/HTTP2 指纹门。同一份 headers/body：
+
+| 出站客户端 | 结果 |
+|---|---|
+| Go `net/http` | 403 `FreeTierError` |
+| Python `urllib` | 403 `FreeTierError` |
+| Bun 1.4.x `fetch` | 403 `FreeTierError` |
+| Bun **1.3.14** `fetch` | **200** |
+
+因此 Go 代理把出站请求以明文 HTTP 交给 `forwarder/`，由 Bun 1.3.14 完成 TLS：
+
+```yaml
+forwarder:
+  addr: "127.0.0.1:8898"   # 留空 = 不启用（Go 直接出站，会 403）
+```
+
+启动、systemd、排查见 [`forwarder/README.md`](./forwarder/README.md) 和
+[`docs/06`](./docs/06-bun-tls-fingerprint.md)。
 
 ## 出站代理（`proxy`，支持 http/https/socks5）
 

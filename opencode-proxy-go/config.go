@@ -21,6 +21,7 @@ type Config struct {
 	Message         MessageConfig   `yaml:"message"`
 	UpstreamHeaders HeaderConfig    `yaml:"upstream_headers"`
 	Proxy           ProxyConfig     `yaml:"proxy"`
+	Forwarder       ForwarderConfig `yaml:"forwarder"`
 	Log             LogConfig       `yaml:"log"`
 	BodyFixup       BodyFixupConfig `yaml:"body_fixup"`
 }
@@ -41,6 +42,16 @@ type ProxyConfig struct {
 	// FromEnv 未配置 URL 时，是否回退读取 HTTP_PROXY/HTTPS_PROXY/NO_PROXY
 	// 环境变量（历史默认行为）。URL 非空时忽略本项。
 	FromEnv bool `yaml:"from_env"`
+}
+
+// ForwarderConfig 可选：把出站请求交给本地 Bun 转发 sidecar。
+//
+// 2026-10-18 起上游新增 Bun 1.3.14 TLS/HTTP2 指纹门：同样 headers/body，
+// Bun 1.3.14 fetch = 200，Go/Python/Bun 1.4.x = 403 FreeTierError。
+// 启用后 Go 代理用明文 HTTP 拨到 addr，由 Bun 1.3.14 完成到 opencode.ai 的 TLS。
+type ForwarderConfig struct {
+	// Addr 例如 "127.0.0.1:8898"；留空 = 不启用，仍由 Go 直接出站。
+	Addr string `yaml:"addr"`
 }
 
 type SessionConfig struct {
@@ -108,6 +119,9 @@ func DefaultConfig() Config {
 			// 默认不配置显式代理，但保留历史行为：跟随 HTTP_PROXY/HTTPS_PROXY 环境变量。
 			URL:     "",
 			FromEnv: true,
+		},
+		Forwarder: ForwarderConfig{
+			Addr: "", // 留空 = 不启用 Bun sidecar
 		},
 		Log: LogConfig{Requests: true, KeepDays: 7},
 		BodyFixup: BodyFixupConfig{

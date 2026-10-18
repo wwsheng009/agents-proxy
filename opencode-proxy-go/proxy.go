@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,6 +27,24 @@ func buildTransport(cfg *Config) (*http.Transport, func(*http.Request) (*url.URL
 		return nil, nil, err
 	}
 	tr.Proxy = pf
+
+	if addr := strings.TrimSpace(cfg.Forwarder.Addr); addr != "" {
+		// Bun 1.3.14 sidecar 负责到 opencode.ai 的 TLS/HTTP2 指纹。
+		// Go 侧使用明文 HTTP，并把 opencode.ai:* 的拨号重定向到 sidecar。
+		baseDial := tr.DialContext
+		if baseDial == nil {
+			d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+			baseDial = d.DialContext
+		}
+		tr.Proxy = nil // forwarder 取代显式代理/环境变量代理
+		tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(address)
+			if err == nil && strings.EqualFold(host, "opencode.ai") {
+				return baseDial(ctx, "tcp", addr)
+			}
+			return baseDial(ctx, network, address)
+		}
+	}
 	return tr, pf, nil
 }
 
