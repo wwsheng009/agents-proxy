@@ -1,0 +1,17 @@
+{
+  "name": "opencode-proxy-bun",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-process Bun 1.3.14 proxy for OpenCode free-tier (no double proxy)",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": "1.3.14"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14"
+  }
+}

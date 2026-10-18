@@ -5,6 +5,13 @@ node_modules/
 *.exe
 *.exe~
 opencode-proxy-go/opencode-proxy-go
+opencode-proxy-go/proxy-go-linux-amd64
+
+# --- local test artifacts / pinned bun runtime ---
+.tmp*/
+.bun1314/
+live-api*.json
+capture_requests_tmp.jsonl
 
 # --- logs（代理抓包日志含完整 header/body/token/API key，绝不入库） ---
 *.log

@@ -1,0 +1,38 @@
+{
+  "listen": "127.0.0.1:8788",
+  "upstream": "https://opencode.ai",
+  "dbPath": "proxy.db",
+  "session": {
+    "headers": [
+      "x-opencode-session-id",
+      "x-session-affinity",
+      "x-session-id",
+      "x-opencode-session",
+      "x-session"
+    ],
+    "fallbackKey": "default",
+    "passthroughNative": true
+  },
+  "upstreamHeaders": {
+    "userAgent": "opencode/latest/2.0.32/cli",
+    "authorization": "Bearer public",
+    "client": "cli",
+    "project": "global"
+  },
+  "bodyFixup": {
+    "mode": "v2"
+  },
+  "log": {
+    "requests": true
+  },
+  "proxy": {
+    "url": "",
+    "noProxy": [],
+    "fromEnv": true
+  },
+  "watchdog": {
+    "enabled": true,
+    "failureThreshold": 3,
+    "probeIntervalMs": 30000
+  }
+}

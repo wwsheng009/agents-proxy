@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCode free-tier proxy (Bun 1.3.14, single process)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/opencode-proxy-bun
+Environment=CONFIG=/opt/opencode-proxy-bun/config.json
+Environment=DB_PATH=/opt/opencode-proxy-bun/proxy.db
+Environment=BUN_1314=/opt/opencode-proxy-bun/bun-1.3.14/bin/bun
+ExecStart=/opt/opencode-proxy-bun/watchdog.sh
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
