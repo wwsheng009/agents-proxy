@@ -5,6 +5,8 @@
 把路径改写、会话映射、v2 身份头、body 修正和出站 TLS/HTTP2 都放在同一个
 Bun 进程里，避免 `opencode-proxy-go` 的「Go 代理 + Bun sidecar」二次代理。
 
+> 最短可用路径见 [`docs/quickstart.md`](./docs/quickstart.md)（本机直连 / 远程 SSH 隧道）。
+
 > **支持 Bun 1.3.14 与 1.4.x。**
 > 已在远程服务器实测：Bun 1.3.14、1.4.2、1.4.3 都能通过上游准入并返回 200。
 > `src/index.ts` 会在启动时检查版本，只接受 `1.3.14+` 与 `1.4.x`，拒绝未验证的

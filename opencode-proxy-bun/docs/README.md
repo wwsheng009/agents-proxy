@@ -21,6 +21,7 @@
 
 | 文档 | 内容 |
 |---|---|
+| [quickstart.md](./quickstart.md) | **简要使用说明**：本机直连、远程 SSH 隧道、客户端配置、停止与常见错误 |
 | [architecture.md](./architecture.md) | 端点迁移、两次 403 根因、Bun 指纹门修正、单进程设计、ID/会话/头/body 细节 |
 | [operations.md](./operations.md) | Bun 1.3.14/1.4.x 安装、配置、运行、systemd、远程部署、日志、升级回滚、排查、安全 |
 | [migration-from-go.md](./migration-from-go.md) | 从 `opencode-proxy-go` + forwarder 迁移到本项目、并行运行、差异与回滚 |

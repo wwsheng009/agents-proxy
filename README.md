@@ -48,6 +48,8 @@ npm install bun@1.4.3 --prefix .bun142
 
 > 已知限制（Bun 1.3.14+/1.4.x、SSE-only、无鉴权、单 SQLite 等）见
 > [`opencode-proxy-bun/docs/limitations.md`](./opencode-proxy-bun/docs/limitations.md)。
+> 最短使用说明（本机直连 / 远程 SSH 隧道）见
+> [`opencode-proxy-bun/docs/quickstart.md`](./opencode-proxy-bun/docs/quickstart.md)。
 
 ## 快速开始 1：opencode 兼容代理（opencode-proxy-go）
 
