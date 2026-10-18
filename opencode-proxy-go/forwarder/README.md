@@ -1,18 +1,18 @@
-# Bun 1.3.14 转发 sidecar
+# Bun 转发 sidecar（1.3.14 / 1.4.x）
 
 ## 为什么需要它
 
-2026-10-18 起，`opencode.ai` 的匿名免费道新增了 **Bun 1.3.14 的 TLS/HTTP2 指纹门**。
-同一份请求（相同的 headers/body）实测：
+2026-10-18 起，`opencode.ai` 的匿名免费道收紧了 **TLS/HTTP2 指纹与出口 IP 准入**。
+同机早期对照（后续远程复验修正）：
 
 | 出站客户端 | 结果 |
 |---|---|
 | Bun **1.3.14** `fetch` | **200**（正常 SSE） |
-| Bun 1.4.3 `fetch` | 403 `FreeTierError` |
+| Bun 1.4.2 / 1.4.3 `fetch` | 本地 403；远程服务器复验为 **200** |
 | Go `net/http` | 403 `FreeTierError` |
 | Python `urllib` | 403 `FreeTierError` |
 
-所以 Go 代理本身无法直接通过上游；需要一个 Bun 1.3.14 的 sidecar 完成出站 TLS。
+所以 Go 代理需要一个受支持的 Bun sidecar 完成出站 TLS（1.3.14+ / 1.4.x）。
 
 ## 架构
 
@@ -21,8 +21,8 @@
   → opencode-proxy-go (:8788)
      路径改写 + v2 身份头 + body 修正
   → 明文 HTTP 拨到 127.0.0.1:8898
-  → forward.ts (Bun 1.3.14)
-     → HTTPS + Bun 1.3.14 TLS/HTTP2
+  → forward.ts (Bun 1.3.14 / 1.4.x)
+     → HTTPS + Bun TLS/HTTP2
   → https://opencode.ai
 ```
 
@@ -30,26 +30,29 @@ Go 代理的 `forwarder.addr` 启用后：
 
 - Go 侧把 `opencode.ai:*` 的拨号重定向到 sidecar；
 - URL 仍然是 `http://opencode.ai/...`（host/path 不变，路径改写与 `isZenTarget` 不受影响）；
-- sidecar 用 Bun 1.3.14 的 `fetch` 发到 `https://opencode.ai`。
+- sidecar 用受支持 Bun 的 `fetch` 发到 `https://opencode.ai`。
 
-## 安装 Bun 1.3.14
+## 安装 Bun（1.3.14 或 1.4.x）
 
-必须 **精确使用 1.3.14**；1.4.x 会被上游 403。
+已验证 **1.3.14 / 1.4.2 / 1.4.3** 可用；1.5+ 未验证。
 
 ```powershell
 # 方式 A：装到项目临时目录，不影响全局 bun
 npm install bun@1.3.14 --prefix .bun1314
 .\.bun1314\node_modules\bun\bin\bun.exe --version   # 1.3.14
 
+npm install bun@1.4.3 --prefix .bun142
+.\.bun142\node_modules\bun\bin\bun.exe --version    # 1.4.3
+
 # 方式 B：全局安装（会覆盖全局 bun 版本）
-npm install -g bun@1.3.14
+npm install -g bun@1.4.3
 bun --version
 ```
 
 Linux（远程服务器）：
 
 ```bash
-npm install -g bun@1.3.14
+npm install -g bun@1.3.14   # 或 bun@1.4.3
 bun --version
 # 或使用官方安装脚本并锁定版本
 ```
@@ -128,7 +131,7 @@ curl.exe -sS -X POST http://127.0.0.1:8788/v1/chat/completions `
 
 ```ini
 [Unit]
-Description=OpenCode Bun 1.3.14 forwarder
+Description=OpenCode Bun 1.3.14/1.4.x forwarder
 After=network-online.target
 
 [Service]
@@ -153,5 +156,5 @@ journalctl -u opencode-forwarder -f
 - sidecar 只监听 `127.0.0.1`，不要暴露公网（无鉴权）。
 - `forwarder` 启用时，Go 代理的 `proxy.url` / 环境变量代理会被忽略；
   sidecar 自己遵循系统路由（TUN/Mihomo 或直连）。
-- 如果 Bun 版本不是 1.3.14，启动脚本会拒绝运行（见 `run.ps1`/`run.sh`）。
+- 如果 Bun 版本不在 1.3.14+ / 1.4.x 范围，启动脚本会拒绝运行（见 `run.ps1`/`run.sh`）。
 - 上游未来可能再次变更指纹要求；届时先验证 Bun 版本，再调整 sidecar/Transport。

@@ -4,20 +4,21 @@
 
 | 目录 | 角色 | 语言 |
 |---|---|---|
-| [`opencode-proxy-bun/`](./opencode-proxy-bun/README.md) | **opencode 免费道单进程代理**（路径改写 + 会话映射 + Bun 1.3.14 TLS 指纹），推荐主实现 | Bun |
-| [`opencode-proxy-go/`](./opencode-proxy-go/README.md) | opencode 免费道兼容代理（Go；2026-10-18 起需配合 `forwarder/` 的 Bun 1.3.14 sidecar） | Go + Bun |
+| [`opencode-proxy-bun/`](./opencode-proxy-bun/README.md) | **opencode 免费道单进程代理**（路径改写 + 会话映射 + Bun 1.3.14/1.4.x TLS 指纹），推荐主实现 | Bun |
+| [`opencode-proxy-go/`](./opencode-proxy-go/README.md) | opencode 免费道兼容代理（Go；需配合 `forwarder/` 的 Bun sidecar） | Go + Bun |
 | [`https-proxy/`](./https-proxy/README.md) | **通用 HTTP/HTTPS 请求观测代理**：只转发、只记录，不改写任何内容 | Node（零依赖） |
 
-> **2026-10-18 重要更新**：上游新增 **Bun 1.3.14 TLS/HTTP2 指纹门**。
-> 同一份请求，Go/Python/Bun 1.4.x 都会被 `403 FreeTierError`，只有 Bun **1.3.14** 返回 200。
+> **2026-10-18 重要更新**：上游收紧了 **Bun/TLS/HTTP2 指纹与出口 IP 准入**。
+> 远程复验 Bun **1.3.14 / 1.4.2 / 1.4.3** 均可返回 200；早期“只有 1.3.14”结论已修正。
+> 本机 403 且官方 OpenCode 也 403 时，优先检查本地出口 IP/网络。
 > 推荐使用 [`opencode-proxy-bun/`](./opencode-proxy-bun/README.md)（单进程，无二次代理）；
 > Go 方案必须同时启动 [`opencode-proxy-go/forwarder/`](./opencode-proxy-go/forwarder/README.md)。
 
 ```text
 opencode-proxy/
-├── opencode-proxy-bun/   # Bun 1.3.14 单进程代理（推荐）
-├── opencode-proxy-go/    # Go 兼容代理（需 forwarder/ 的 Bun 1.3.14 sidecar）
-│   └── forwarder/        # Bun 1.3.14 出站 sidecar
+├── opencode-proxy-bun/   # Bun 1.3.14/1.4.x 单进程代理（推荐）
+├── opencode-proxy-go/    # Go 兼容代理（需 forwarder/ 的 Bun sidecar）
+│   └── forwarder/        # Bun 1.3.14/1.4.x 出站 sidecar
 ├── https-proxy/          # 通用 HTTP/HTTPS 观测代理（Node，含本地证书与启动脚本）
 ├── opencode-verify-go/   # 准入规则离线验证程序（24 针证据表比对 + 可选在线重放）
 ├── docs/                 # 设计与逆向分析文档
@@ -35,17 +36,17 @@ opencode-proxy/
 
 ```powershell
 cd E:\projects\ai\opencode-proxy\opencode-proxy-bun
-npm install bun@1.3.14 --prefix .bun1314
+npm install bun@1.4.3 --prefix .bun142
 .\run.ps1
 ```
 
 客户端 base URL：`http://127.0.0.1:8788/v1/chat/completions`。
 
-该方案在**一个 Bun 1.3.14 进程**内完成路径改写、会话映射、header/body 修正和出站 TLS，
+该方案在**一个 Bun 1.3.14/1.4.x 进程**内完成路径改写、会话映射、header/body 修正和出站 TLS，
 没有 Go → Bun 的二次代理。详见
 [`opencode-proxy-bun/README.md`](./opencode-proxy-bun/README.md)。
 
-> 已知限制（Bun 1.3.14、SSE-only、无鉴权、单 SQLite 等）见
+> 已知限制（Bun 1.3.14+/1.4.x、SSE-only、无鉴权、单 SQLite 等）见
 > [`opencode-proxy-bun/docs/limitations.md`](./opencode-proxy-bun/docs/limitations.md)。
 
 ## 快速开始 1：opencode 兼容代理（opencode-proxy-go）
@@ -68,8 +69,8 @@ curl http://127.0.0.1:8788/v1/chat/completions \
 
 代理在转发时统一补齐 v2 准入要素：端点 `/v1/*`、`/inference/*` → `/zen/*`、`Bearer public`、
 四段 UA、四个会话头 + `traceparent`/`b3`、强制 `stream:true`、tools 缺 `read` 时前插 canonical 工具。
-**2026-10-18 起上游新增 Bun 1.3.14 TLS/HTTP2 指纹门，Go 方案必须先启动
-[`opencode-proxy-go/forwarder/`](./opencode-proxy-go/forwarder/README.md)（Bun 1.3.14）。**
+**2026-10-18 起上游收紧 Bun TLS/HTTP2 指纹与出口 IP 准入，Go 方案必须先启动
+[`opencode-proxy-go/forwarder/`](./opencode-proxy-go/forwarder/README.md)（Bun 1.3.14/1.4.x）。**
 详见 [`opencode-proxy-go/README.md`](./opencode-proxy-go/README.md)。
 
 匿名免费额度是**全局/每日**的；`429` 按 `Retry-After` 等待，换 IP/服务器/session 无效。

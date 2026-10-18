@@ -6,7 +6,7 @@
 |---|---|---|
 | 进程数 | 2（Go proxy + Bun forwarder） | **1（Bun）** |
 | 端口 | 8788 + 8898 | **8788** |
-| 出站 TLS | Bun 1.3.14 sidecar | Bun 1.3.14 直接出站 |
+| 出站 TLS | Bun sidecar | Bun 1.3.14 / 1.4.x 直接出站 |
 | 路径/header/body | Go | Bun |
 | 会话映射 | Go + SQLite | Bun + SQLite |
 | 客户端 baseURL | `:8788/v1/chat/completions` | **同左** |
@@ -18,7 +18,7 @@
 
 ### 2.1 准备
 
-1. 安装 Bun **1.3.14**（见 `operations.md`）。
+1. 安装 Bun **1.3.14 或 1.4.x**（见 `operations.md`）。
 2. 记录当前 Go 方案使用的端口/数据库/配置。
 3. 确认客户端当前 baseURL（通常是 `http://127.0.0.1:8788/v1/chat/completions`）。
 
@@ -42,8 +42,8 @@ systemctl disable --now opencode-proxy-go
 
 ```powershell
 cd E:\projects\ai\opencode-proxy\opencode-proxy-bun
-npm install bun@1.3.14 --prefix .bun1314
-.\.bun1314\node_modules\bun\bin\bun.exe run src/index.ts
+npm install bun@1.4.3 --prefix .bun142
+.\.bun142\node_modules\bun\bin\bun.exe run src/index.ts
 ```
 
 或：
@@ -140,8 +140,8 @@ incoming_key, upstream_session, created_at_ms, last_seen_ms, hits
    请求日志输出到 stdout，由 systemd/journald 收集。
 3. **没有 `strip_prefix` / `inject_template`**：只保留现代 v2 行为。
 4. **配置是 JSON**，不是 YAML。
-5. **Bun 版本严格 1.3.14**：1.4.x 无法通过上游指纹门。
-6. **出站代理能力不等价**：Go 支持 http/https/socks5/socks5h；Bun 1.3.14
+5. **Bun 版本支持 1.3.14+ / 1.4.x**：1.5+ 未验证。
+6. **出站代理能力不等价**：Go 支持 http/https/socks5/socks5h；Bun 1.3.14/1.4.x
    只支持 http/https（无 SOCKS5），不读 `ALL_PROXY`，且代理环境变量在启动时
    缓存、冲突配置（`fromEnv=false` + 非空环境变量，或 `url+noProxy` + 非空环境
    变量）会拒绝启动。详见 [limitations.md §6.1](./limitations.md)。
@@ -161,9 +161,9 @@ systemctl enable --now opencode-proxy-go
 
 ## 8. 迁移检查清单
 
-- [ ] Bun `--version` = 1.3.14
+- [ ] Bun `--version` 在 1.3.14+ / 1.4.x 范围
 - [ ] 旧 Go 代理 + forwarder 已停止（或使用不同端口/DB）
-- [ ] 新代理 `/healthz` 返回 `bun: "1.3.14"`
+- [ ] 新代理 `/healthz` 返回实际 Bun 版本（如 `"1.4.3"`）
 - [ ] `/v1/chat/completions` 返回 200 + `X-Proxy-Via: direct`（或配置的代理地址）
 - [ ] 客户端新会话可用
 - [ ] 日志无 403/502

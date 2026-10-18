@@ -22,10 +22,10 @@
   代理旧 `session.headers` 未收录这两个头，导致所有请求共用 `default → ses_...`
   （历史 `hits=2561`）。现已在 `config.yaml` 中补齐，日志显示
   `session_via=x-opencode-session-id`。
-- **第二次 403（2026-10-18 12:01 起）**：上游新增 **Bun 1.3.14 TLS/HTTP2 指纹门**。
-  同一份捕获请求：Go / Python / Bun 1.4.x 都 403，Bun **1.3.14** 才 200。
-  已加入 `forwarder/`（Bun 1.3.14 sidecar），Go 代理通过明文 HTTP 交给它出站；
-  本地与远程均恢复 **200**。详见 [06](./06-bun-tls-fingerprint.md)。
+- **第二次 403（2026-10-18 12:01 起）**：上游收紧了 **Bun/TLS/HTTP2 指纹与出口 IP 准入**。
+  同机早期对照：Go / Python / Bun 1.4.x 都 403，Bun **1.3.14** 才 200。
+  后续华为云远程复验：Bun **1.4.2 / 1.4.3** 也返回 200；sidecar 启动脚本现接受
+  `1.3.14+ / 1.4.x`。详见 [06](./06-bun-tls-fingerprint.md)。
 
 ## 文档索引
 

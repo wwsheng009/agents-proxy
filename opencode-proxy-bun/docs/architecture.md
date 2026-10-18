@@ -25,7 +25,7 @@ OpenCode v2.0.29 → v2.0.32 期间：
 
 本项目的 `src/rewrite.ts` 完整复刻了这个反向映射。
 
-## 3. 第二次 403：Bun 1.3.14 TLS/HTTP2 指纹门
+## 3. 第二次 403：Bun TLS/HTTP2 指纹门（后续修正）
 
 2026-10-18 12:01 起，即使路径/headers/body 全部正确，仍然 403。
 
@@ -51,8 +51,14 @@ OpenCode v2.0.29 → v2.0.32 期间：
 
 - 代理的 headers/body 没有问题；
 - 上游拒绝的是 **TLS/HTTP2 指纹**；
-- 只有 Bun **1.3.14** 的 ClientHello/HTTP2 特征能通过；
-- 因此本项目直接在 Bun 1.3.14 中运行，不再让 Go 出站。
+- 当时本机只有 Bun **1.3.14** 的 ClientHello/HTTP2 特征能通过；
+- 因此本项目先在 Bun 1.3.14 中运行，不再让 Go 出站。
+
+> **后续复验修正（2026-10-18 下午）**：在华为云远程服务器（`<server>`）上，
+> 独立 Bun **1.4.2 / 1.4.3** 直连均为 **200**；用 Bun 1.4.2 运行完整代理也是 **200**。
+> 官方 OpenCode v2.0.32（二进制内嵌 `Bun/1.4.2`）同样正常。
+> 因此“只有 1.3.14 能过”不成立；本机 1.4.3 的 403 是**本地出口 IP/网络**被拒。
+> 当前版本门为 `1.3.14+ / 1.4.x`，`1.5+` 仍未验证。
 
 ## 4. 单进程请求流程
 
@@ -75,7 +81,7 @@ Bun.serve (:8788)
   ├─ buildUpstreamHeaders(...)
   │    UA / 四个 session 头 / client / project / trace
   └─ fetch("https://opencode.ai" + targetPath, ...)
-       │  Bun 1.3.14 TLS/HTTP2
+       │  Bun 1.3.14 / 1.4.x TLS/HTTP2
        ▼
      /zen/*（Console 兼容层：剥匿名凭据并转发）
        ▼
@@ -162,8 +168,8 @@ CREATE TABLE session_map (
 
 | 方案 | 进程 | 出站 TLS | 本地转发 |
 |---|---|---|---|
-| Go 代理 + Bun forwarder | 2 | Bun 1.3.14 | Go → 127.0.0.1:8898 → Bun |
-| 本项目 | **1** | Bun 1.3.14 | 无 |
+| Go 代理 + Bun forwarder | 2 | Bun 1.3.14/1.4.x | Go → 127.0.0.1:8898 → Bun |
+| 本项目 | **1** | Bun 1.3.14/1.4.x | 无 |
 
 本项目直接在 Bun 的 `fetch` 中出站，路径/头/body 也在同一进程完成，
 因此没有二次代理、没有额外端口、没有本地转发开销。
@@ -188,13 +194,14 @@ CREATE TABLE session_map (
 只统计响应体为 `FreeTierError` 的 403，并在 `/healthz` 暴露
 `upstream_403_streak`；达到阈值后外部 watchdog 先做一次“新进程直连”
 探测，只有探测通过且代理仍 `degraded` 时才重启。上游整体故障（探测也失败）
-时不会反复重启。
+时不会反复重启。若 `/healthz` 完全不可用，watchdog 会直接重启本地进程，
+避免“代理已死 + 上游 403”导致永久不恢复。
 
 ## 10. 限制
 
 完整清单见 [limitations.md](./limitations.md)。摘要：
 
-- 必须 Bun 1.3.14；1.4.x 会被上游 403。
+- 支持 Bun 1.3.14+ / 1.4.x；1.5+ 未验证。
 - 强制上游流式，当前不把 SSE 组装回 JSON；非流式客户端请用
   `opencode-proxy-go` 或后续补充 translate。
 - 代理无鉴权，默认只监听 `127.0.0.1`。

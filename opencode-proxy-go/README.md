@@ -24,8 +24,8 @@
 > 已在 `config.yaml` 的 `session.headers` 中收录，避免所有请求共用 `default` 桶
 > （历史 `hits=2561`）。详见 [`docs/03`](./docs/03-verification-and-troubleshooting.md) §11。
 >
-> **Bun 1.3.14 sidecar（2026-10-18 12:01 起必需）**：上游新增 Bun 1.3.14
-> TLS/HTTP2 指纹门；Go/Python/Bun 1.4.x 都会被 403，只有 Bun 1.3.14 能过。
+> **Bun sidecar（2026-10-18 12:01 起必需）**：上游收紧了 Bun TLS/HTTP2 指纹
+> 与出口 IP 准入；远程复验 Bun **1.3.14 / 1.4.2 / 1.4.3** 均可返回 200。
 > 启动 [`forwarder/`](./forwarder/README.md)，并在 `config.yaml` 设置
 > `forwarder.addr: "127.0.0.1:8898"`。详见
 > [`docs/06`](./docs/06-bun-tls-fingerprint.md)。
@@ -47,7 +47,7 @@
 ## 工作方式
 
 ```
-其它程序 ──HTTP──▶ opencode-proxy-go(:8788) ──明文 HTTP──▶ Bun 1.3.14 forwarder(:8898) ──HTTPS──▶ opencode.ai
+其它程序 ──HTTP──▶ opencode-proxy-go(:8788) ──明文 HTTP──▶ Bun forwarder(:8898) ──HTTPS──▶ opencode.ai
                      │
                      ├─ 端点改写：/v1/*、/v1beta/models、旧 /inference/v1/*、
                      │            live catalog 的 /inference/{openai,anthropic,google,systemone}/v1/*
@@ -61,7 +61,7 @@
                      ├─ 注入 v2 身份头：authorization / user-agent / 四个会话头 / traceparent + b3
                      │    （客户端自带的一切 x-opencode-* / 会话头 / 毒头先丢弃再统一注入）
                      ├─ 出站：forwarder 启用时用明文 HTTP 拨 sidecar；
-                     │    sidecar 用 Bun 1.3.14 fetch 到 https://opencode.ai
+                     │    sidecar 用 Bun 1.3.14/1.4.x fetch 到 https://opencode.ai
                      └─ body 修正（仅道内 chat 端点）：强制 stream:true + 补齐 read 工具
 ```
 
@@ -72,10 +72,10 @@ ses 降序) + 14位base62`，同毫秒 counter 自增；与原 JS 实现黄金�
 ## 快速开始
 
 ```powershell
-# 1) 先启动 Bun 1.3.14 forwarder（必须 1.3.14；1.4.x 会被上游 403）
+# 1) 先启动 Bun forwarder（1.3.14 或 1.4.x；均已远程验证）
 cd opencode-proxy-go\forwarder
-npm install bun@1.3.14 --prefix ..\.bun1314
-..\.bun1314\node_modules\bun\bin\bun.exe run forward.ts
+npm install bun@1.4.3 --prefix ..\.bun142
+..\.bun142\node_modules\bun\bin\bun.exe run forward.ts
 
 # 2) 再启动 Go 代理
 cd ..
@@ -110,18 +110,18 @@ curl http://127.0.0.1:8788/v1/chat/completions \
   直接传原生 `x-opencode-session` 也可以——值已符合上游结构时**原样透传**
   （见 `passthrough_native`），否则照常稳定重映射。
 
-## Bun 1.3.14 sidecar（2026-10-18 12:01 起必需）
+## Bun sidecar（2026-10-18 12:01 起必需）
 
-上游新增了 Bun 1.3.14 的 TLS/HTTP2 指纹门。同一份 headers/body：
+上游收紧了 Bun TLS/HTTP2 指纹与出口 IP 准入。早期同机对照：
 
 | 出站客户端 | 结果 |
 |---|---|
 | Go `net/http` | 403 `FreeTierError` |
 | Python `urllib` | 403 `FreeTierError` |
-| Bun 1.4.x `fetch` | 403 `FreeTierError` |
+| Bun 1.4.x `fetch` | 403 `FreeTierError`（本地出口；后续远程复验为 200） |
 | Bun **1.3.14** `fetch` | **200** |
 
-因此 Go 代理把出站请求以明文 HTTP 交给 `forwarder/`，由 Bun 1.3.14 完成 TLS：
+因此 Go 代理把出站请求以明文 HTTP 交给 `forwarder/`，由受支持的 Bun 完成 TLS：
 
 ```yaml
 forwarder:

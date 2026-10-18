@@ -1,46 +1,52 @@
 # opencode-proxy-bun
 
-**单进程 Bun 1.3.14 的 OpenCode 免费道代理。**
+**单进程 Bun 1.3.14 / 1.4.x 的 OpenCode 免费道代理。**
 
 把路径改写、会话映射、v2 身份头、body 修正和出站 TLS/HTTP2 都放在同一个
 Bun 进程里，避免 `opencode-proxy-go` 的「Go 代理 + Bun sidecar」二次代理。
 
-> **必须使用 Bun 1.3.14。**
-> 2026-10-18 起上游新增 Bun 1.3.14 TLS/HTTP2 指纹门：同一份请求，Go/Python/Bun 1.4.x
-> 都会被 `403 FreeTierError`，只有 Bun 1.3.14 返回 200。`src/index.ts` 会在启动时
-> 严格检查版本并拒绝 1.4.x。
+> **支持 Bun 1.3.14 与 1.4.x。**
+> 已在远程服务器实测：Bun 1.3.14、1.4.2、1.4.3 都能通过上游准入并返回 200。
+> `src/index.ts` 会在启动时检查版本，只接受 `1.3.14+` 与 `1.4.x`，拒绝未验证的
+> `1.5+` / `2.x`，避免未来 Bun 升级静默改变 TLS/HTTP2 指纹。
 
 ## 为什么独立成一个项目
 
 之前为了绕过指纹门，采用了两段式：
 
 ```
-客户端 → opencode-proxy-go(:8788) → 明文 HTTP → Bun 1.3.14 forwarder(:8898) → opencode.ai
+客户端 → opencode-proxy-go(:8788) → 明文 HTTP → Bun sidecar(:8898) → opencode.ai
 ```
 
 这虽然可用，但多了一个进程、一个端口和一次本地转发。本项目把 Go 代理的逻辑
 完整搬到 Bun：
 
 ```
-客户端 → opencode-proxy-bun(:8788) → Bun 1.3.14 fetch → opencode.ai
+客户端 → opencode-proxy-bun(:8788) → Bun 1.3.14/1.4.x fetch → opencode.ai
 ```
 
 - 少一个进程/端口；
 - 不再有 Go ↔ Bun 的二次代理；
 - 路径改写、session 映射、header/body 修正、SSE 流式回传都在一个进程内完成；
-- 仍然使用 Bun 1.3.14 的 TLS/HTTP2 指纹。
+- 仍然使用已验证的 Bun 1.3.14 / 1.4.x TLS/HTTP2 指纹。
 
 ## 快速开始
 
-### 1. 准备 Bun 1.3.14
+### 1. 准备 Bun（1.3.14 或 1.4.x）
 
 ```powershell
-# Windows（项目内固定版本，不影响全局 bun）
+# Windows（二选一；项目内固定版本，不影响全局 bun）
 npm install bun@1.3.14 --prefix .bun1314
 .\.bun1314\node_modules\bun\bin\bun.exe --version   # 1.3.14
 
-# Linux（远程）
-npm install -g bun@1.3.14
+npm install bun@1.4.3 --prefix .bun142
+.\.bun142\node_modules\bun\bin\bun.exe --version    # 1.4.3
+
+# 也可以直接指定已有二进制
+$env:BUN_BIN = "C:\path\to\bun.exe"
+
+# Linux（远程）：安装 1.3.14 或 1.4.x 均可
+npm install -g bun@1.4.3
 bun --version
 ```
 
@@ -110,7 +116,7 @@ opencode-proxy-bun (:8788)
   ├─ buildUpstreamHeaders：UA / 四个 session 头 / client / project / trace
   ├─ fixupBody：强制 stream:true + 注入 read 工具 + stream_options
   ├─ outbound：可选出站代理（proxy.url / HTTP_PROXY），响应头观测实际路由
-  └─ fetch（Bun 1.3.14 TLS/HTTP2）
+  └─ fetch（Bun 1.3.14 / 1.4.x TLS/HTTP2）
         ▼
      https://opencode.ai/zen/v1/*   （Console 兼容层，匿名凭据在此被剥离）
         ▼
@@ -245,7 +251,7 @@ x-session
 - `/healthz` 的 `proxy` 段：`configured` / `no_proxy` / `from_env` / `effective`；
 - 请求日志末尾的 `via=`。
 
-Bun 1.3.14 的限制（详见 [limitations.md](./docs/limitations.md)）：
+Bun 1.3.14 / 1.4.x 的限制（详见 [limitations.md](./docs/limitations.md)）：
 
 - 只支持 `http` / `https` 代理，**不支持 SOCKS5**（配置 `socks5://` 会在启动时报错）；
 - **不读 `ALL_PROXY`**，只认 scheme 对应的 `HTTP_PROXY` / `HTTPS_PROXY`；
@@ -257,13 +263,15 @@ Bun 1.3.14 的限制（详见 [limitations.md](./docs/limitations.md)）：
 
 ```bash
 curl http://127.0.0.1:8788/healthz
-# {"status":"ok","bun":"1.3.14","upstream":"https://opencode.ai","sessions":N,
+# {"status":"ok","bun":"1.4.3","upstream":"https://opencode.ai","sessions":N,
 #  "proxy":{"configured":"","no_proxy":[],"from_env":true,"effective":"direct"},
 #  "upstream_403_streak":0,"last_upstream_log_id":null,...}
 ```
 
 连续 `FreeTierError` 达到阈值时 `status` 变为 `degraded`；
 `watchdog.ps1`/`watchdog.sh` 据此触发“探测上游 → 必要时重启”。
+如果 `/healthz` 完全不可用（进程退出/卡死），watchdog 会直接重启本地进程，
+不受上游探测结果影响。
 
 每个响应带：
 
@@ -277,7 +285,7 @@ curl http://127.0.0.1:8788/healthz
 bun test
 ```
 
-当前 85 个测试，覆盖：
+当前 87 个测试，覆盖：
 
 - 路径改写（新 `/inference/*`、裸 `/v1/*`、旧 `/inference/v1/*`、`/zen/*`）；
 - `ses_`/`msg_` 算法（格式、唯一性、升降序）；
@@ -291,7 +299,7 @@ bun test
 | | `opencode-proxy-go` + forwarder | `opencode-proxy-bun`（本项目） |
 |---|---|---|
 | 进程数 | 2（Go + Bun） | **1（Bun）** |
-| 出站 TLS | Bun 1.3.14 sidecar | Bun 1.3.14 直接出站 |
+| 出站 TLS | Bun sidecar | Bun 1.3.14 / 1.4.x 直接出站 |
 | 出站代理 | `proxy.url` / `no_proxy` / `from_env`，支持 socks5 | 同左，但仅 http/https，无 SOCKS5（见限制） |
 | 路径/头/body | Go | Bun |
 | 客户端 baseURL | `:8788/v1/chat/completions` | 同左（drop-in） |
@@ -307,7 +315,7 @@ Linux systemd 单元见 [`deploy/opencode-proxy-bun.service`](./deploy/opencode-
 ```bash
 # 远程目录示例
 /opt/opencode-proxy-bun/
-├── bun-1.3.14/bun
+├── bun-1.3.14/bun   # 或 bun-1.4.x/bun
 ├── src/
 ├── config.json
 ├── package.json
@@ -324,7 +332,7 @@ journalctl -u opencode-proxy-bun -f
 
 完整清单见 [`docs/limitations.md`](./docs/limitations.md)。要点：
 
-- **仅支持 Bun 1.3.14**：1.4.x 会被上游 403；`src/index.ts` 会拒绝启动。
+- **仅支持 Bun 1.3.14+ / 1.4.x**：1.5+、2.x 未验证，`src/index.ts` 会拒绝启动。
 - **始终返回 SSE**：代理会强制上游 `stream:true`；当前没有把 SSE 组装回 JSON。
   OpenCode 客户端使用流式请求，不受影响；非流式客户端请继续使用
   `opencode-proxy-go`（它会 translate SSE → JSON），或后续在本项目补充。
@@ -335,14 +343,14 @@ journalctl -u opencode-proxy-bun -f
 - **出站代理限 http/https**：不支持 SOCKS5；不读 `ALL_PROXY`；环境变量在启动时缓存，冲突配置会拒绝启动。
 - **匿名额度是全局/每日的**：429 按 `Retry-After` 等待；换 IP、服务器、session 都无效。
 - **无重试 / 熔断 / 模型列表缓存**：上游错误原样或 502 返回。
-- **上游指纹可能再次变化**：升级 Bun 前必须重新验证，不要直接使用 1.4.x。
+- **上游准入可能再次变化**：升级 Bun 或切换网络前必须重新验证。
 
 ## 排查
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 启动即退出，提示 Bun 版本 | 不是 1.3.14 | 安装 `bun@1.3.14`，用固定路径启动 |
-| `403 FreeTierError` | TLS 指纹/路径/UA/session 不合规 | 先确认 `bun --version` = 1.3.14；再看 `X-Proxy-Via`（应为 `direct` 或你配置的代理） |
+| 启动即退出，提示 Bun 版本 | 不是 1.3.14+ / 1.4.x | 安装受支持的 Bun，或用 `BUN_BIN` 指定 |
+| `403 FreeTierError` | TLS 指纹/路径/UA/session/出口 IP 不合规 | 先确认 `bun --version` 在支持范围；再看 `X-Proxy-Via`；官方客户端也 403 时检查出口 IP |
 | `429 FreeUsageLimitError` | 已过准入，匿名额度/限流 | 按 `Retry-After` 等待，或配置真实 `OPENCODE_API_KEY` |
 | `502 proxy_error` | 上游网络/DNS/TLS/代理失败 | 检查网络与代理；看 `/healthz` 的 `proxy.effective` 与日志 `via=` |
 | 启动即退出，提示 proxy 冲突 | 环境变量与 `fromEnv=false` / `url+noProxy` 冲突 | 清空 `HTTP(S)_PROXY` 后重启，或改用 `proxy.url` / `fromEnv=true` |

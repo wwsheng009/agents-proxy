@@ -3,13 +3,14 @@
 > 本文件是 `opencode-proxy-bun` 的**限制项单一来源**。
 > 其它文档（README、architecture、operations、migration）只做摘要并链接到这里。
 
-## 1. 运行时：只能 Bun 1.3.14
+## 1. 运行时：Bun 1.3.14+ / 1.4.x
 
-- 上游 OpenCode 免费道自 2026-10-18 起只接受 **Bun 1.3.14** 的 TLS/HTTP2 指纹。
-- Go / Python / Bun 1.4.x 的同样请求都会返回
-  `403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`。
-- `src/index.ts` 启动时严格检查 `Bun.version === "1.3.14"`，否则直接退出。
-- 升级 Bun 前必须先验证上游是否仍只接受 1.3.14；不要直接使用 1.4.x。
+- 已在远程服务器实测：Bun **1.3.14**、**1.4.2**、**1.4.3** 都能通过上游准入并返回 200。
+- 早期“1.4.x 一律 403”的结论是**本地出口 IP/网络**被拒绝造成的，不是 Bun 版本本身；
+  同一台远程服务器上，官方 OpenCode（内嵌 Bun 1.4.2）、独立 Bun 1.4.2/1.4.3 都正常。
+- `src/index.ts` 启动时接受 `1.3.14+` 与 `1.4.x`；`1.5+` / `2.x` 未验证，直接退出。
+- 启动脚本支持 `BUN_BIN`，也可以使用 `.bun1314` / `.bun142` 目录。
+- 升级到 1.5+ 或更换出口网络前仍必须重新验证上游准入。
 
 ## 2. 流式：始终返回 SSE
 
@@ -50,18 +51,18 @@
 - 不支持 `body_fixup.mode: inject_template`（1.x 遗留模式）。
 - 只保留 `bodyFixup.mode: "v2"` / `"off"`。
 
-## 6.1 出站代理：仅 http/https，行为受 Bun 1.3.14 限制
+## 6.1 出站代理：仅 http/https，行为受已验证 Bun 版本限制
 
 - `proxy.url` / `proxy.noProxy` / `proxy.fromEnv` 已支持，作用范围仅限
   「本代理 → 上游」；入站连接不受影响。
-- **不支持 SOCKS5**：Bun 1.3.14 对 `socks5://` 抛 `UnsupportedProxyProtocol`；
+- **不支持 SOCKS5**：当前验证的 Bun 1.3.14/1.4.x 对 `socks5://` 抛 `UnsupportedProxyProtocol`；
   配置 `socks5://` / `socks5h://` / `socks://` 会在启动时直接报错。
   需要 SOCKS5 请继续使用 `opencode-proxy-go`，或在本机加一层
   HTTP → SOCKS5 转换代理。
-- **不读 `ALL_PROXY`**：实测 1.3.14 只认 scheme 对应的
+- **不读 `ALL_PROXY`**：实测 1.3.14/1.4.x 只认 scheme 对应的
   `HTTP_PROXY` / `HTTPS_PROXY`（大小写均可），`ALL_PROXY` 被忽略。
 - **环境变量在进程启动时读取并缓存**：运行期修改 / 删除 `process.env` 无效；
-  `proxy: false`、`respectNoProxy` 也被 1.3.14 忽略，无法在请求级绕过环境变量。
+   `proxy: false`、`respectNoProxy` 也被这些版本忽略，无法在请求级绕过环境变量。
   因此以下配置会直接拒绝启动（而不是静默走错路径）：
   - `proxy.fromEnv=false` 且 `HTTP(S)_PROXY` 非空；
   - `proxy.url` + 非空 `proxy.noProxy` 且 `HTTP(S)_PROXY` 非空
@@ -83,8 +84,8 @@
 
 ## 8. 上游指纹可能再次变化
 
-- 当前通过 Bun 1.3.14 的 TLS/HTTP2 指纹。
-- 上游未来可能再次调整指纹、路径或准入规则。
+- 当前通过 Bun 1.3.14 / 1.4.x 的 TLS/HTTP2 指纹。
+- 上游未来可能再次调整指纹、路径、出口 IP 准入规则。
 - 变更时应先：
   1. 用官方客户端验证是否仍可用；
   2. 检查 live catalog 的 `opencode.api`；
@@ -97,7 +98,8 @@
 - `/zen/v1/models` 直接代理，不缓存模型列表。
 - 需要重试/熔断时由客户端或前置网关处理。
 - 代理**不自动重启**；`run.ps1`/`run.sh` 默认启动的外部 watchdog 负责：
-  连续 3 次 `degraded` 且“新进程直连正常”时才重启。
+  连续 3 次 `degraded` 且“新进程直连正常”时才重启；`/healthz` 完全不可用时
+  直接重启本地进程（不受上游探测结果影响）。
 - watchdog 不重放用户请求，只重启进程；进行中的 SSE 会中断。
 - watchdog 依赖 `/healthz` 的 403 计数；上游 5xx/429 会清零，不会触发重启。
 

@@ -1,32 +1,45 @@
 # 运维手册
 
-## 1. 前置：Bun 1.3.14
+## 1. 前置：Bun 1.3.14+ / 1.4.x
 
-**必须精确使用 Bun 1.3.14。** 1.4.x 会被上游 `403 FreeTierError` 拒绝。
+已验证 **Bun 1.3.14、1.4.2、1.4.3** 均可通过上游准入。`src/index.ts` 接受
+`1.3.14+` 与 `1.4.x`，拒绝未验证的 `1.5+` / `2.x`。早期“1.4.x 一律 403”
+的结论来自本地出口 IP，而不是版本本身。
 
 ### Windows
 
 ```powershell
 cd E:\projects\ai\opencode-proxy\opencode-proxy-bun
+
+# 方式 A：Bun 1.3.14
 npm install bun@1.3.14 --prefix .bun1314
 .\.bun1314\node_modules\bun\bin\bun.exe --version   # 1.3.14
+
+# 方式 B：Bun 1.4.x
+npm install bun@1.4.3 --prefix .bun142
+.\.bun142\node_modules\bun\bin\bun.exe --version    # 1.4.3
+
+# 方式 C：显式指定任意受支持二进制
+$env:BUN_BIN = "C:\path\to\bun.exe"
 ```
 
 ### Linux
 
 ```bash
-npm install -g bun@1.3.14
-bun --version   # 1.3.14
+npm install -g bun@1.4.3
+bun --version   # 1.4.3
+# 也可以继续使用 bun@1.3.14
 ```
 
 或者从 npm 解包固定二进制：
 
 ```bash
-curl -sS -o /tmp/bun1314.tgz \
-  https://registry.npmjs.org/@oven/bun-linux-x64-baseline/-/bun-linux-x64-baseline-1.3.14.tgz
-mkdir -p /opt/opencode-proxy-bun/bun-1.3.14
-tar -xzf /tmp/bun1314.tgz -C /opt/opencode-proxy-bun/bun-1.3.14 --strip-components=1
-/opt/opencode-proxy-bun/bun-1.3.14/bin/bun --version
+BUN_VERSION=1.4.3   # 或 1.3.14
+curl -sS -o /tmp/bun.tgz \
+  "https://registry.npmjs.org/@oven/bun-linux-x64-baseline/-/bun-linux-x64-baseline-${BUN_VERSION}.tgz"
+mkdir -p "/opt/opencode-proxy-bun/bun-${BUN_VERSION}"
+tar -xzf /tmp/bun.tgz -C "/opt/opencode-proxy-bun/bun-${BUN_VERSION}" --strip-components=1
+"/opt/opencode-proxy-bun/bun-${BUN_VERSION}/bin/bun" --version
 ```
 
 ## 2. 配置
@@ -87,8 +100,9 @@ bun run start
 ```
 
 `run.ps1` 默认启动 `watchdog.ps1`：每 30 秒检查一次 `/healthz`，连续 3 次
-`degraded`/不可达后，先用新的 Bun 1.3.14 进程直连上游确认准入仍然正常；
+`degraded` 后，先用新的受支持 Bun 进程直连上游确认准入仍然正常；
 只有“直连正常、代理仍 degraded”时才重启本地代理，避免上游故障时反复重启。
+如果 `/healthz` 完全不可用（进程退出/卡死），则直接重启本地进程，不受上游探测结果影响。
 watchdog 自身日志写到 `watchdog.log`；包装进程的原始输出在
 `watchdog.out.log` / `watchdog.err.log`；代理本身继续追加到
 `proxy.console.log` / `proxy.console.err.log`。
@@ -129,7 +143,7 @@ $env:NO_WATCHDOG = "1"
 
 ```ini
 [Unit]
-Description=OpenCode free-tier proxy (Bun 1.3.14)
+Description=OpenCode free-tier proxy (Bun 1.3.14/1.4.x)
 After=network-online.target
 Wants=network-online.target
 
@@ -138,7 +152,7 @@ Type=simple
 WorkingDirectory=/opt/opencode-proxy-bun
 Environment=CONFIG=/opt/opencode-proxy-bun/config.json
 Environment=DB_PATH=/opt/opencode-proxy-bun/proxy.db
-Environment=BUN_1314=/opt/opencode-proxy-bun/bun-1.3.14/bin/bun
+Environment=BUN_BIN=/opt/opencode-proxy-bun/bun-1.3.14/bin/bun
 ExecStart=/opt/opencode-proxy-bun/watchdog.sh
 Restart=always
 RestartSec=3
@@ -162,7 +176,7 @@ journalctl -u opencode-proxy-bun -f
 
 ```
 /opt/opencode-proxy-bun/
-├── bun-1.3.14/
+├── bun-1.3.14/          # 或 bun-1.4.x/
 │   └── bin/bun
 ├── src/
 ├── config.json
@@ -175,14 +189,14 @@ journalctl -u opencode-proxy-bun -f
 
 ```bash
 cd /opt/opencode-proxy-bun
-/opt/opencode-proxy-bun/bun-1.3.14/bin/bun run src/index.ts
+/opt/opencode-proxy-bun/bun-1.3.14/bin/bun run src/index.ts   # 或 1.4.x 路径
 ```
 
 验证：
 
 ```bash
 curl -sS http://127.0.0.1:8788/healthz
-# {"status":"ok","bun":"1.3.14","upstream":"https://opencode.ai","sessions":N}
+# {"status":"ok","bun":"1.4.3","upstream":"https://opencode.ai","sessions":N}
 
 curl -sS -X POST http://127.0.0.1:8788/v1/chat/completions \
   -H 'Content-Type: application/json' \
@@ -261,15 +275,15 @@ systemctl start opencode-proxy-bun
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 启动退出：Bun 版本 | 不是 1.3.14 | 用 `bun@1.3.14` 的固定二进制 |
-| `403 FreeTierError` | TLS 指纹/路径/UA/session 不合规 | 先确认 `bun --version`；再看 `X-Proxy-Via`（应为 `direct` 或你配置的代理）；查 `/healthz` |
+| 启动退出：Bun 版本 | 不是 1.3.14+ / 1.4.x | 安装受支持版本，或用 `BUN_BIN` 指定 |
+| `403 FreeTierError` | TLS 指纹/路径/UA/session/出口 IP 不合规 | 先确认 `bun --version` 在支持范围；再看 `X-Proxy-Via`；官方客户端也 403 时查出口 IP |
 | 长时间运行后突然连续 `403 FreeTierError` | 旧进程运行态失效（重启即恢复） | 看 `/healthz` 的 `upstream_403_streak`；用 `watchdog.ps1`/`watchdog.sh` 自动重启；诊断字段见 §5 |
 | `429 FreeUsageLimitError` | 已过准入，匿名额度/限流 | 按 `Retry-After` 等待；或配置真实 key |
 | `502 proxy_error` | 上游网络/DNS/TLS/代理失败 | 检查网络、DNS、系统时间、`/healthz` 的 `proxy.effective` 与日志 `via=` |
 | 启动即退出，提示 proxy 冲突 | 环境变量与 `fromEnv=false` / `url+noProxy` 冲突 | 清空 `HTTP(S)_PROXY` 后重启，或改用 `proxy.url` / `fromEnv=true` |
 | 所有请求共用 session | 客户端没发会话头 | 客户端加 `X-Opencode-Session-Id`；或清 `default` |
 | `/healthz` 正常但请求 404 | 路径未命中改写 | 检查入站路径；`/zen/*`、`/v1/*`、`/inference/*` 都应命中 |
-| 启动报 EEXIST | Bun 1.3.14 `mkdirSync(".")` 行为 | 已在 `session.ts` 处理；确认使用当前版本源码 |
+| 启动报 EEXIST | 旧版 Bun `mkdirSync(".")` 行为 | 已在 `session.ts` 处理；确认使用当前版本源码 |
 
 ## 9. 安全
 
@@ -295,7 +309,7 @@ systemctl start opencode-proxy-bun
 
 完整清单见 [limitations.md](./limitations.md)。运维相关要点：
 
-- 只能 Bun 1.3.14；升级前必须重新验证上游指纹；
+- 支持 Bun 1.3.14+ / 1.4.x；升级到 1.5+ 前必须重新验证上游准入；
 - 始终返回 SSE；非流式客户端继续用 Go 方案；
 - 代理无鉴权，只监听 `127.0.0.1`；
 - 只有 `session_map`；不要让两个进程同时写同一个 SQLite；

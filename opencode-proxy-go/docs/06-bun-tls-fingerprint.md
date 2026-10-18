@@ -1,5 +1,10 @@
 # 06 · Bun 1.3.14 TLS/HTTP2 指纹门与 sidecar 方案
 
+> **后续复验修正（2026-10-18 下午）**：本文的“只有 1.3.14”结论只在当时本机网络成立。
+> 华为云远程服务器上，Bun **1.4.2 / 1.4.3** 直连与完整 sidecar 均为 **200**；
+> 官方 OpenCode v2.0.32（内嵌 `Bun/1.4.2`）也正常。当前 sidecar 启动脚本接受
+> `1.3.14+ / 1.4.x`，本文保留原始证据链。
+
 > 2026-10-18 12:00 左右，已修复的代理再次返回
 > `403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`。
 > 本文记录第二次根因、证据、解决方案与部署方式。
@@ -252,7 +257,7 @@ POST /zen/v1/chat/completions -> 200
 
 ## 9. 排查清单
 
-1. **Bun 版本**：`bun --version` 必须是 **1.3.14**；1.4.x 会 403。
+1. **Bun 版本**：`bun --version` 应在 **1.3.14+ / 1.4.x** 范围；1.5+ 未验证。
 2. **forwarder 是否在跑**：`ss -lntp | grep 8898`；日志在
    Windows `forwarder.console.err.log` / Linux `journalctl -u opencode-forwarder`。
 3. **Go 代理是否启用 forwarder**：日志应出现
