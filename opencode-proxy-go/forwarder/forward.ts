@@ -1,13 +1,14 @@
-// opencode-proxy-go Bun 1.3.14 转发 sidecar
+// opencode-proxy-go Bun 1.3.14/1.4.x 转发 sidecar
 //
-// 为什么需要它：2026-10-18 起 opencode.ai 对匿名免费道新增了
-// Bun 1.3.14 的 TLS/HTTP2 指纹门。同样的 headers/body：
+// 为什么需要它：2026-10-18 起 opencode.ai 对匿名免费道收紧了
+// Bun/TLS/HTTP2 指纹与出口 IP 准入。同机早期对照：
 //   Bun 1.3.14 fetch → 200
 //   Go / Python / Bun 1.4.x fetch → 403 FreeTierError
-// 因此 Go 代理把出站请求以明文 HTTP 交给本 sidecar，由 Bun 1.3.14
+// 后续远程复验：Bun 1.4.2 / 1.4.3 也能返回 200。
+// 因此 Go 代理把出站请求以明文 HTTP 交给本 sidecar，由受支持 Bun
 // 完成到 https://opencode.ai 的 TLS/HTTP2。
 //
-// 运行（必须 Bun 1.3.14）：
+// 运行（Bun 1.3.14 / 1.4.x）：
 //   bun run forward.ts
 // 环境变量：
 //   FORWARDER_HOST  默认 127.0.0.1

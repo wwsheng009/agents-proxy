@@ -21,7 +21,7 @@ proxy:
   no_proxy: []
   from_env: false
 
-# Bun 1.3.14 出站 sidecar（上游 TLS/HTTP2 指纹门）
+# Bun 出站 sidecar（Bun 1.3.14/1.4.x；上游 TLS/HTTP2 + 出口 IP 准入）
 forwarder:
   addr: "127.0.0.1:8898"
 

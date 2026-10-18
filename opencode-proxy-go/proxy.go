@@ -29,7 +29,7 @@ func buildTransport(cfg *Config) (*http.Transport, func(*http.Request) (*url.URL
 	tr.Proxy = pf
 
 	if addr := strings.TrimSpace(cfg.Forwarder.Addr); addr != "" {
-		// Bun 1.3.14 sidecar 负责到 opencode.ai 的 TLS/HTTP2 指纹。
+		// Bun sidecar（1.3.14 / 1.4.x）负责到 opencode.ai 的 TLS/HTTP2 指纹。
 		// Go 侧使用明文 HTTP，并把 opencode.ai:* 的拨号重定向到 sidecar。
 		baseDial := tr.DialContext
 		if baseDial == nil {

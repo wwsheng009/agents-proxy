@@ -11,19 +11,39 @@ param(
 $ErrorActionPreference = "Stop"
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Test-SupportedBunVersion([string]$value) {
+    try {
+        $parsed = [version](($value.Trim() -split '[-+]')[0])
+        return ($parsed -ge [version]'1.3.14' -and $parsed -lt [version]'1.5.0')
+    } catch {
+        return $false
+    }
+}
+
 $bun = $Bun
 $candidates = @()
+if ($env:BUN_BIN) { $candidates += $env:BUN_BIN }
 if ($env:BUN_1314) { $candidates += $env:BUN_1314 }
 $candidates += (Join-Path $here ".bun1314\node_modules\bun\bin\bun.exe")
+$candidates += (Join-Path $here ".bun142\node_modules\bun\bin\bun.exe")
 $candidates += (Join-Path $here "..\.bun1314\node_modules\bun\bin\bun.exe")
+$candidates += (Join-Path $here "..\.bun142\node_modules\bun\bin\bun.exe")
 $candidates += (Join-Path $here "..\.tmp-bun1314\node_modules\bun\bin\bun.exe")
+$candidates += (Join-Path $here "..\.tmp-bun142\node_modules\bun\bin\bun.exe")
 $candidates += "bun"
 
-if (-not $bun) {
+if ($bun) {
+    $version = (& $bun --version 2>$null | Select-Object -First 1)
+    if (-not $version -or -not (Test-SupportedBunVersion $version)) {
+        Write-Error "指定的 Bun 不受支持: $bun ($version)；可用版本: 1.3.14+ / 1.4.x"
+        exit 1
+    }
+} else {
     foreach ($candidate in $candidates) {
         try {
             $version = (& $candidate --version 2>$null | Select-Object -First 1)
-            if ($version -and $version.Trim() -eq "1.3.14") {
+            if ($version -and (Test-SupportedBunVersion $version)) {
                 $bun = $candidate
                 break
             }
@@ -32,7 +52,7 @@ if (-not $bun) {
 }
 
 if (-not $bun) {
-    Write-Error "需要 Bun 1.3.14（上游 TLS/HTTP2 指纹门；1.4.x 会 403）。请先: npm install bun@1.3.14 --prefix .bun1314"
+    Write-Error "需要 Bun 1.3.14+ 或 1.4.x（已验证 1.3.14 / 1.4.2 / 1.4.3）。可通过 BUN_BIN 指定二进制。"
     exit 1
 }
 
@@ -55,7 +75,7 @@ function Write-Watchdog([string]$message) {
 }
 
 function Start-Proxy {
-    Write-Watchdog "[watchdog] starting Bun 1.3.14: $bun"
+    Write-Watchdog "[watchdog] starting Bun $( & $bun --version ): $bun"
     $existing = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
     if ($existing) {
         Write-Watchdog "[watchdog] port $port already has a listener (pid=$($existing[0].OwningProcess)); attaching"
@@ -158,8 +178,10 @@ if ($listener) {
 
 while ($true) {
     $health = Get-Health
+    $healthUnavailable = $false
     if ($null -eq $health) {
         Write-Watchdog "[watchdog] /healthz unavailable"
+        $healthUnavailable = $true
         $consecutiveDegraded++
     } elseif ($health.status -eq "degraded") {
         Write-Watchdog "[watchdog] healthz degraded: 403 streak=$($health.upstream_403_streak) last_log_id=$($health.last_upstream_log_id)"
@@ -170,7 +192,18 @@ while ($true) {
 
     if ($consecutiveDegraded -ge $FailureThreshold) {
         Write-Watchdog "[watchdog] threshold reached ($consecutiveDegraded); checking upstream admission"
-        if (-not (Test-UpstreamAdmission)) {
+        if ($healthUnavailable) {
+            # The local process is gone or wedged. Restart it regardless of
+            # upstream admission; otherwise a dead proxy stays dead forever
+            # while the upstream is also returning 403.
+            Write-Watchdog "[watchdog] /healthz unavailable; restarting local proxy"
+            Stop-Proxy $process
+            Stop-ListenerOnPort
+            Start-Sleep -Seconds $RestartDelaySeconds
+            $process = Start-Proxy
+            $ownProcess = $null -ne $process
+            $consecutiveDegraded = 0
+        } elseif (-not (Test-UpstreamAdmission)) {
             Write-Watchdog "[watchdog] upstream admission also failing; not restarting (wait for upstream)"
             $consecutiveDegraded = 0
         } elseif (-not (Test-ExistingInstanceHealthy)) {

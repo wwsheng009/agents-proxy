@@ -1,9 +1,10 @@
 // One-shot upstream admission probe used by watchdog.ps1.
 //
-// Exit 0 only when a direct Bun 1.3.14 request to /zen/v1/chat/completions
-// passes admission (HTTP 200 or 429). A 403 FreeTierError means the local
-// proxy process should be restarted; any other failure means the upstream
-// itself is unavailable, so restarting the proxy will not help.
+// Exit 0 only when a direct request from the selected Bun runtime
+// (1.3.14+ / 1.4.x) to /zen/v1/chat/completions passes admission
+// (HTTP 200 or 429). A 403 FreeTierError means the local proxy process
+// should be restarted; any other failure means the upstream itself is
+// unavailable, so restarting the proxy will not help.
 
 import { makeId } from "../src/identifier"
 import { READ_TOOL } from "../src/tools"

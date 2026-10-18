@@ -1,12 +1,12 @@
 /**
  * 出站代理（proxy → upstream 这一段）。
  *
- * Bun 1.3.14 的 fetch 支持 `proxy` 选项与 HTTP_PROXY / HTTPS_PROXY / NO_PROXY，
+ * Bun 1.3.14/1.4.x 的 fetch 支持 `proxy` 选项与 HTTP_PROXY / HTTPS_PROXY / NO_PROXY，
  * 但有几处与最新文档/Go 版本不同，本模块负责把这些差异收口：
  *
- *  1. 只支持 http / https 代理；socks5 / socks5h 在 1.3.14 会抛
+ *  1. 只支持 http / https 代理；socks5 / socks5h 在已验证版本会抛
  *     UnsupportedProxyProtocol，因此启动即拒绝，不做静默降级。
- *  2. `proxy: false` 与 `respectNoProxy` 在 1.3.14 会被忽略，无法用它绕过
+ *  2. `proxy: false` 与 `respectNoProxy` 在已验证版本会被忽略，无法用它绕过
  *     环境变量。因此本模块在启动时归一化进程环境变量，并在每个请求上显式
  *     传 `proxy`，保证配置是唯一事实来源。
  *  3. NO_PROXY 原生不支持 CIDR，且 host:port 语义与 Go 版本不完全一致。
@@ -346,7 +346,7 @@ export function decideProxy(
   return { via: fromEnv, option: fromEnv }
 }
 
-/** 按 Bun 1.3.14 的 NO_PROXY 语义（* / 域名含子域 / host:port / IP）做展示判定。 */
+/** 按已验证 Bun 的 NO_PROXY 语义（* / 域名含子域 / host:port / IP）做展示判定。 */
 function envNoProxyHit(target: URL, env: Record<string, string | undefined>): boolean {
   const raw = env.no_proxy ?? env.NO_PROXY
   if (!raw?.trim()) return false

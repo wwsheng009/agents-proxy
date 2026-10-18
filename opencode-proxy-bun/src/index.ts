@@ -1,18 +1,13 @@
+import { isSupportedBunVersion, SUPPORTED_BUN_RANGE } from "./bun-version"
 import { loadConfig, parseListen } from "./config"
 import { OutboundState } from "./outbound"
 import { handle } from "./proxy"
 import { RuntimeState } from "./runtime"
 import { SessionStore } from "./session"
 
-const REQUIRED_BUN = "1.3.14"
-
-if (Bun.version !== REQUIRED_BUN) {
-  console.error(
-    `[opencode-proxy-bun] Bun ${REQUIRED_BUN} is required (current ${Bun.version}).`,
-  )
-  console.error(
-    "The upstream free tier accepts only the Bun 1.3.14 TLS/HTTP2 fingerprint; 1.4.x returns 403.",
-  )
+if (!isSupportedBunVersion(Bun.version)) {
+  console.error(`[opencode-proxy-bun] unsupported Bun ${Bun.version}.`)
+  console.error(`Supported versions: ${SUPPORTED_BUN_RANGE} (tested: 1.3.14 / 1.4.2 / 1.4.3).`)
   process.exit(1)
 }
 

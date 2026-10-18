@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Keep opencode-proxy-bun alive on Linux.
 #
-# Restarts the proxy only when:
-#   1. /healthz is unavailable or reports status=degraded, AND
-#   2. a fresh Bun 1.3.14 process can reach upstream (probe-upstream.ts).
+# Restart rules:
+#   1. /healthz unavailable -> restart immediately (local process is dead/wedged).
+#   2. /healthz reports status=degraded -> restart only when a fresh supported
+#      Bun process can reach upstream (probe-upstream.ts).
 #
 # If the fresh-process probe also fails, the upstream itself is unavailable;
 # restarting the long-lived proxy would not help.
@@ -24,17 +25,35 @@ log_watchdog() {
   echo "$line" >>"$watchdog_log"
 }
 
+supported_bun_version() {
+  local version="${1%%[-+]*}"
+  case "$version" in
+    1.4.*) return 0 ;;
+    1.3.*)
+      local patch="${version#1.3.}"
+      case "$patch" in ''|*[!0-9]*) return 1 ;; esac
+      [ "$patch" -ge 14 ]
+      return $?
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 bun=""
 for candidate in \
+  "${BUN_BIN:-}" \
   "${BUN_1314:-}" \
   "$here/.bun1314/node_modules/bun/bin/bun" \
+  "$here/.bun142/node_modules/bun/bin/bun" \
   "$here/../.bun1314/node_modules/bun/bin/bun" \
+  "$here/../.bun142/node_modules/bun/bin/bun" \
   "$here/../.tmp-bun1314/node_modules/bun/bin/bun" \
+  "$here/../.tmp-bun142/node_modules/bun/bin/bun" \
   "bun"; do
   [ -n "$candidate" ] || continue
   if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
     version="$("$candidate" --version 2>/dev/null | head -n1 || true)"
-    if [ "$version" = "1.3.14" ]; then
+    if supported_bun_version "$version"; then
       bun="$candidate"
       break
     fi
@@ -42,8 +61,8 @@ for candidate in \
 done
 
 if [ -z "$bun" ]; then
-  echo "需要 Bun 1.3.14（上游 TLS/HTTP2 指纹门；1.4.x 会 403）。" >&2
-  echo "安装: npm install bun@1.3.14 --prefix .bun1314" >&2
+  echo "需要 Bun 1.3.14+ 或 1.4.x（已验证 1.3.14 / 1.4.2 / 1.4.3）。" >&2
+  echo "可通过 BUN_BIN 指定二进制，或安装到 .bun1314 / .bun142。" >&2
   exit 1
 fi
 
@@ -114,8 +133,10 @@ trap cleanup INT TERM
 
 while true; do
   health="$(curl -fsS --max-time 5 "$base/healthz" 2>/dev/null || true)"
+  health_unavailable=0
   if [ -z "$health" ]; then
     log_watchdog "[watchdog] /healthz unavailable" >&2
+    health_unavailable=1
     consecutive=$((consecutive + 1))
   elif printf '%s' "$health" | grep -q '"status":"degraded"'; then
     log_watchdog "[watchdog] healthz degraded: $health" >&2
@@ -126,7 +147,15 @@ while true; do
 
   if [ "$consecutive" -ge "$threshold" ]; then
     log_watchdog "[watchdog] threshold reached ($consecutive); checking upstream admission" >&2
-    if probe_upstream; then
+    if [ "$health_unavailable" -eq 1 ]; then
+      # Local process is gone or wedged; restart even if upstream is 403.
+      log_watchdog "[watchdog] /healthz unavailable; restarting local proxy" >&2
+      stop_proxy
+      stop_listener_on_port
+      sleep 2
+      start_proxy
+      consecutive=0
+    elif probe_upstream; then
       health_now="$(curl -fsS --max-time 5 "$base/healthz" 2>/dev/null || true)"
       if [ -z "$health_now" ] || printf '%s' "$health_now" | grep -q '"status":"degraded"'; then
         log_watchdog "[watchdog] upstream probe passed but /healthz is still degraded; restarting local proxy" >&2

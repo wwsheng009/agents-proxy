@@ -46,9 +46,9 @@ type ProxyConfig struct {
 
 // ForwarderConfig 可选：把出站请求交给本地 Bun 转发 sidecar。
 //
-// 2026-10-18 起上游新增 Bun 1.3.14 TLS/HTTP2 指纹门：同样 headers/body，
-// Bun 1.3.14 fetch = 200，Go/Python/Bun 1.4.x = 403 FreeTierError。
-// 启用后 Go 代理用明文 HTTP 拨到 addr，由 Bun 1.3.14 完成到 opencode.ai 的 TLS。
+// 2026-10-18 起上游收紧 Bun/TLS/HTTP2 指纹与出口 IP 准入。
+// 远程复验 Bun 1.3.14 / 1.4.2 / 1.4.3 均可返回 200。
+// 启用后 Go 代理用明文 HTTP 拨到 addr，由受支持 Bun 完成到 opencode.ai 的 TLS。
 type ForwarderConfig struct {
 	// Addr 例如 "127.0.0.1:8898"；留空 = 不启用，仍由 Go 直接出站。
 	Addr string `yaml:"addr"`
