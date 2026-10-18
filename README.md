@@ -1,27 +1,52 @@
 # opencode-proxy
 
-两个相互独立的本地代理，各管一件事：
+多个相互独立的本地代理，各管一件事：
 
 | 目录 | 角色 | 语言 |
 |---|---|---|
-| [`opencode-proxy-go/`](./opencode-proxy-go/README.md) | **opencode 免费道兼容代理**（v2 准入改写 + 会话稳定映射 + SQLite），现行主实现 | Go |
+| [`opencode-proxy-bun/`](./opencode-proxy-bun/README.md) | **opencode 免费道单进程代理**（路径改写 + 会话映射 + Bun 1.3.14 TLS 指纹），推荐主实现 | Bun |
+| [`opencode-proxy-go/`](./opencode-proxy-go/README.md) | opencode 免费道兼容代理（Go；2026-10-18 起需配合 `forwarder/` 的 Bun 1.3.14 sidecar） | Go + Bun |
 | [`https-proxy/`](./https-proxy/README.md) | **通用 HTTP/HTTPS 请求观测代理**：只转发、只记录，不改写任何内容 | Node（零依赖） |
+
+> **2026-10-18 重要更新**：上游新增 **Bun 1.3.14 TLS/HTTP2 指纹门**。
+> 同一份请求，Go/Python/Bun 1.4.x 都会被 `403 FreeTierError`，只有 Bun **1.3.14** 返回 200。
+> 推荐使用 [`opencode-proxy-bun/`](./opencode-proxy-bun/README.md)（单进程，无二次代理）；
+> Go 方案必须同时启动 [`opencode-proxy-go/forwarder/`](./opencode-proxy-go/forwarder/README.md)。
 
 ```text
 opencode-proxy/
-├── opencode-proxy-go/          # opencode v2 兼容代理（Go 单二进制）
-├── https-proxy/       # 通用 HTTP/HTTPS 观测代理（Node，含本地证书与启动脚本）
-├── opencode-verify-go/         # 准入规则离线验证程序（24 针证据表比对 + 可选在线重放）
-├── docs/              # 设计与逆向分析文档
-├── scripts/           # 工具脚本：start-opencode.ps1、日志抽取/重放、一次性实验
-├── opencode_tools.json# v2 准入所需的 canonical read 工具面（opencode-proxy-go 读取）
-└── data/              # 抓包/重放证据产物（本地保留，已 gitignore）
+├── opencode-proxy-bun/   # Bun 1.3.14 单进程代理（推荐）
+├── opencode-proxy-go/    # Go 兼容代理（需 forwarder/ 的 Bun 1.3.14 sidecar）
+│   └── forwarder/        # Bun 1.3.14 出站 sidecar
+├── https-proxy/          # 通用 HTTP/HTTPS 观测代理（Node，含本地证书与启动脚本）
+├── opencode-verify-go/   # 准入规则离线验证程序（24 针证据表比对 + 可选在线重放）
+├── docs/                 # 设计与逆向分析文档
+├── scripts/              # 工具脚本：start-opencode.ps1、日志抽取/重放、一次性实验
+├── opencode_tools.json   # v2 准入所需的 canonical read 工具面
+└── data/                 # 抓包/重放证据产物（本地保留，已 gitignore）
 ```
 
 > **拆分记录（2026-10-17）**：原先根目录的 Node 单文件 `proxy.js` 同时承担「zen 兼容改写」
 > 与「通用观测」两件事。现已拆分——兼容改写只保留在 `opencode-proxy-go/`，观测代理独立到
 > `https-proxy/` 且**不再做任何改写**。旧 Node 兼容层实现见 git 历史（提交 `1afd58a`），
 > 相关文档中出现的 `proxy.js` 兼容层描述均为该历史实现的记录。
+
+## 快速开始 0：Bun 单进程（推荐）
+
+```powershell
+cd E:\projects\ai\opencode-proxy\opencode-proxy-bun
+npm install bun@1.3.14 --prefix .bun1314
+.\run.ps1
+```
+
+客户端 base URL：`http://127.0.0.1:8788/v1/chat/completions`。
+
+该方案在**一个 Bun 1.3.14 进程**内完成路径改写、会话映射、header/body 修正和出站 TLS，
+没有 Go → Bun 的二次代理。详见
+[`opencode-proxy-bun/README.md`](./opencode-proxy-bun/README.md)。
+
+> 已知限制（Bun 1.3.14、SSE-only、无鉴权、单 SQLite 等）见
+> [`opencode-proxy-bun/docs/limitations.md`](./opencode-proxy-bun/docs/limitations.md)。
 
 ## 快速开始 1：opencode 兼容代理（opencode-proxy-go）
 
@@ -41,11 +66,13 @@ curl http://127.0.0.1:8788/v1/chat/completions \
   -d '{"model":"deepseek-v4.1-flash-free","messages":[{"role":"user","content":"hi"}],"max_tokens":8}'
 ```
 
-代理在转发时统一补齐 v2 准入要素：端点 `/v1/*` → `/inference/v1/*`、`Bearer public`、
-四段 UA、四个会话头 + `traceparent`/`b3`、剥离 `msg_` 毒头、强制 `stream:true`、
-tools 缺 `read` 时前插 canonical 工具。详见 [`opencode-proxy-go/README.md`](./opencode-proxy-go/README.md)。
+代理在转发时统一补齐 v2 准入要素：端点 `/v1/*`、`/inference/*` → `/zen/*`、`Bearer public`、
+四段 UA、四个会话头 + `traceparent`/`b3`、强制 `stream:true`、tools 缺 `read` 时前插 canonical 工具。
+**2026-10-18 起上游新增 Bun 1.3.14 TLS/HTTP2 指纹门，Go 方案必须先启动
+[`opencode-proxy-go/forwarder/`](./opencode-proxy-go/forwarder/README.md)（Bun 1.3.14）。**
+详见 [`opencode-proxy-go/README.md`](./opencode-proxy-go/README.md)。
 
-免费额度按 IP 限流（约 200 请求/天），`429` = 配额耗尽，等窗口重置。
+匿名免费额度是**全局/每日**的；`429` 按 `Retry-After` 等待，换 IP/服务器/session 无效。
 
 ## 快速开始 2：通用观测代理（https-proxy）
 
